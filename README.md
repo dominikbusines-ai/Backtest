@@ -72,6 +72,7 @@ ANTHROPIC_VISION_MODEL=claude-haiku-4-5
 `ANTHROPIC_VISION_MODEL` ist optional. Das gewählte Modell muss Bildeingaben und strukturierte Ausgaben unterstützen.
 
 Die Analyse ist ausdrücklich auf sichtbare Datenerfassung beschränkt. Nicht zuverlässig erkennbare Angaben werden als `null` zurückgegeben. Die KI bewertet weder Setup noch Entry.
+Nicht erkannte Confidence-Werte werden mit `0` ausgegeben, damit das strukturierte Schema innerhalb der Anthropic-Grenzen bleibt.
 
 ## 4. Starten und prüfen
 
