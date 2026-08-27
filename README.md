@@ -1,6 +1,6 @@
 # EdgeLog — Trading Backtesting
 
-Minimalistische Next.js-Web-App zur schnellen Erfassung und statistischen Auswertung von Backtest-Trades. Ein Chart-Screenshot kann serverseitig durch OpenAI ausgelesen werden; unsichere Werte bleiben leer und alle erkannten Werte sind bearbeitbar.
+Minimalistische Next.js-Web-App zur schnellen Erfassung und statistischen Auswertung von Backtest-Trades. Ein Chart-Screenshot kann serverseitig durch Anthropic Claude ausgelesen werden; unsichere Werte bleiben leer und alle erkannten Werte sind bearbeitbar.
 
 ## Funktionen
 
@@ -20,10 +20,10 @@ Minimalistische Next.js-Web-App zur schnellen Erfassung und statistischen Auswer
 - Next.js 16 mit App Router und TypeScript
 - Tailwind CSS
 - Supabase Postgres und Supabase Storage
-- OpenAI Responses API mit strengem JSON-Schema
+- Anthropic Messages API mit strukturiertem JSON-Schema
 - Vercel-kompatible Route Handler
 
-Der `SUPABASE_SERVICE_ROLE_KEY` und der `OPENAI_API_KEY` werden ausschließlich in serverseitigen Route Handlern verwendet. Sie werden niemals an den Browser ausgeliefert.
+Der `SUPABASE_SERVICE_ROLE_KEY` und der `ANTHROPIC_API_KEY` werden ausschließlich in serverseitigen Route Handlern verwendet. Sie werden niemals an den Browser ausgeliefert.
 
 ## 1. Lokal einrichten
 
@@ -60,16 +60,16 @@ Das SQL-Schema erstellt:
 
 Row Level Security ist auf allen Tabellen aktiv. Der Browser greift nicht direkt auf Supabase zu; sämtliche Datenoperationen laufen serverseitig über die App.
 
-## 3. OpenAI konfigurieren
+## 3. Anthropic konfigurieren
 
-Einen API-Key unter der OpenAI Platform erstellen und ausschließlich serverseitig eintragen:
+Einen API-Key in der Anthropic Console erstellen und ausschließlich serverseitig eintragen:
 
 ```env
-OPENAI_API_KEY=IHR_OPENAI_API_KEY
-OPENAI_VISION_MODEL=gpt-4.1-mini
+ANTHROPIC_API_KEY=IHR_ANTHROPIC_API_KEY
+ANTHROPIC_VISION_MODEL=claude-haiku-4-5
 ```
 
-`OPENAI_VISION_MODEL` ist optional. Das gewählte Modell muss Bildeingaben und strukturierte Ausgaben unterstützen.
+`ANTHROPIC_VISION_MODEL` ist optional. Das gewählte Modell muss Bildeingaben und strukturierte Ausgaben unterstützen.
 
 Die Analyse ist ausdrücklich auf sichtbare Datenerfassung beschränkt. Nicht zuverlässig erkennbare Angaben werden als `null` zurückgegeben. Die KI bewertet weder Setup noch Entry.
 
@@ -104,7 +104,7 @@ Das MVP ist als persönliche Single-User-App ohne eigenes Login ausgelegt. Die A
 - Screenshots liegen in einem privaten Bucket.
 - Die App erzeugt nur kurzlebige signierte URLs zur Anzeige.
 - Bilder werden vor der Analyse clientseitig verkleinert, wenn sie zu groß sind.
-- Der OpenAI-Aufruf und der Supabase-Upload erfolgen serverseitig.
+- Der Anthropic-Aufruf und der Supabase-Upload erfolgen serverseitig.
 - In Git werden `.env` und `.env.local` ignoriert.
 
 ## Kennzahlen

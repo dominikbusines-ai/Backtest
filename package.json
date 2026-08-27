@@ -9,10 +9,10 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.121.0",
     "@supabase/supabase-js": "latest",
     "lucide-react": "latest",
     "next": "latest",
-    "openai": "latest",
     "react": "latest",
     "react-dom": "latest",
     "zod": "latest"

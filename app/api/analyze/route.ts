@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
+import { jsonSchemaOutputFormat } from "@anthropic-ai/sdk/helpers/json-schema";
 import { requireSupabase } from "@/lib/supabase-server";
 
 export const runtime = "nodejs";
@@ -41,32 +42,47 @@ const schema = {
     },
   },
   required: ["instrument", "date", "time", "timeframe", "direction", "entry", "stopLoss", "takeProfit", "riskReward", "resultType", "resultR", "detectedObservations", "detectedZones", "confidence"],
-};
+} as const;
+
+const supportedImageTypes = ["image/png", "image/jpeg", "image/webp"] as const;
+type SupportedImageType = (typeof supportedImageTypes)[number];
 
 export async function POST(request: Request) {
   try {
-    if (!process.env.OPENAI_API_KEY) throw new Error("OPENAI_API_KEY ist noch nicht konfiguriert.");
+    if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY ist noch nicht konfiguriert.");
     const form = await request.formData();
     const file = form.get("image");
     if (!(file instanceof File)) return NextResponse.json({ error: "Kein Bild übermittelt." }, { status: 400 });
-    if (!(["image/png", "image/jpeg", "image/webp"].includes(file.type))) return NextResponse.json({ error: "Nur PNG, JPG und WebP werden unterstützt." }, { status: 400 });
+    if (!supportedImageTypes.includes(file.type as SupportedImageType)) return NextResponse.json({ error: "Nur PNG, JPG und WebP werden unterstützt." }, { status: 400 });
     if (file.size > 5 * 1024 * 1024) return NextResponse.json({ error: "Das Bild ist nach der Optimierung größer als 5 MB." }, { status: 413 });
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const dataUrl = `data:${file.type};base64,${buffer.toString("base64")}`;
-    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    const response = await openai.responses.create({
-      model: process.env.OPENAI_VISION_MODEL || "gpt-4.1-mini",
-      input: [{
+    const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const response = await anthropic.messages.parse({
+      model: process.env.ANTHROPIC_VISION_MODEL || "claude-haiku-4-5",
+      max_tokens: 1200,
+      system: "Du extrahierst ausschließlich objektiv sichtbare Daten aus Trading-Charts. Erfinde nichts und bewerte weder den Trade noch den Entry.",
+      messages: [{
         role: "user",
         content: [
-          { type: "input_text", text: "Extrahiere ausschließlich objektiv sichtbare Daten aus diesem Trading-Chart. Erfinde nichts. Setze jedes nicht sicher erkennbare Feld auf null. Bewerte weder Trade noch Entry. Beobachtungen und Zonen nur nennen, wenn sie im Bild ausdrücklich beschriftet oder eindeutig markiert sind. Confidence enthält nur erkannte Felder und Werte zwischen 0 und 1." },
-          { type: "input_image", image_url: dataUrl, detail: "high" },
+          {
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: file.type as SupportedImageType,
+              data: buffer.toString("base64"),
+            },
+          },
+          {
+            type: "text",
+            text: "Extrahiere die sichtbaren Chartdaten. Setze jedes nicht sicher erkennbare Feld auf null. Beobachtungen und Zonen nur nennen, wenn sie im Bild ausdrücklich beschriftet oder eindeutig markiert sind. Confidence-Werte müssen zwischen 0 und 1 liegen.",
+          },
         ],
       }],
-      text: { format: { type: "json_schema", name: "trade_chart_extraction", strict: true, schema } },
+      output_config: { format: jsonSchemaOutputFormat(schema) },
     });
-    const analysis = JSON.parse(response.output_text);
+    const analysis = response.parsed_output;
+    if (!analysis) throw new Error("Anthropic hat keine auswertbare Antwort geliefert.");
 
     const supabase = requireSupabase();
     const extension = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
