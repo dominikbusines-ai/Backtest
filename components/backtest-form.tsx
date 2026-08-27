@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, ImagePlus, Loader2, Plus, Sparkles, X } from "lucide-react";
+import { usePendingScreenshot, type PendingScreenshot } from "@/components/pending-screenshot-provider";
 import type { AnalysisResult, Direction, ResultType, Tag, Trade, TradeInput } from "@/lib/types";
 
 const LOCAL_TAGS: Tag[] = [
@@ -51,6 +52,7 @@ async function optimizeImage(file: File): Promise<File> {
 export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
+  const { screenshot: pendingScreenshot, setScreenshot: setPendingScreenshot, clearScreenshot: clearPendingScreenshot } = usePendingScreenshot();
   const [form, setForm] = useState<FormState>(() => initialTrade ? {
     trade_date: initialTrade.trade_date, trade_time: initialTrade.trade_time ?? "", instrument: initialTrade.instrument,
     timeframe: initialTrade.timeframe ?? "", direction: initialTrade.direction, entry: displayNum(initialTrade.entry),
@@ -61,15 +63,32 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
   const [tags, setTags] = useState<Tag[]>(LOCAL_TAGS);
   const [selected, setSelected] = useState<string[]>(initialTrade?.tags.map((tag) => tag.id) ?? []);
   const [detected, setDetected] = useState<Set<string>>(new Set());
-  const [screenshotPath, setScreenshotPath] = useState(initialTrade?.screenshot_url ?? "");
-  const [preview, setPreview] = useState(initialTrade?.screenshot_signed_url ?? "");
-  const [fileName, setFileName] = useState("");
+  const [editedScreenshot, setEditedScreenshot] = useState<PendingScreenshot>({
+    path: initialTrade?.screenshot_url ?? "",
+    preview: initialTrade?.screenshot_signed_url ?? "",
+    fileName: "",
+  });
   const [isDragging, setDragging] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: "ok" | "error"; text: string } | null>(null);
   const [addingTag, setAddingTag] = useState(false);
   const [newTag, setNewTag] = useState("");
+  const screenshot = initialTrade ? editedScreenshot : pendingScreenshot;
+  const { path: screenshotPath, preview, fileName } = screenshot;
+
+  function updateScreenshot(update: Partial<PendingScreenshot>) {
+    if (initialTrade) setEditedScreenshot((current) => ({ ...current, ...update }));
+    else setPendingScreenshot((current) => ({ ...current, ...update }));
+  }
+
+  function removeScreenshot() {
+    if (preview.startsWith("blob:")) URL.revokeObjectURL(preview);
+    if (initialTrade) setEditedScreenshot({ path: "", preview: "", fileName: "" });
+    else clearPendingScreenshot();
+    if (inputRef.current) inputRef.current.value = "";
+    setMessage(null);
+  }
 
   useEffect(() => {
     fetch("/api/tags").then(async (response) => response.ok ? response.json() : Promise.reject()).then((data) => setTags(data.tags)).catch(() => undefined);
@@ -87,21 +106,23 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
   async function handleFile(file?: File) {
     if (!file) return;
     if (!(["image/png", "image/jpeg", "image/webp"].includes(file.type))) { setMessage({ type: "error", text: "Bitte PNG, JPG oder WebP auswählen." }); return; }
-    setAnalyzing(true); setMessage(null); setFileName(file.name); setPreview(URL.createObjectURL(file));
+    if (preview.startsWith("blob:")) URL.revokeObjectURL(preview);
+    const localPreview = URL.createObjectURL(file);
+    setAnalyzing(true); setMessage(null); updateScreenshot({ path: "", fileName: file.name, preview: localPreview });
     try {
       const optimized = await optimizeImage(file);
       const body = new FormData(); body.append("image", optimized);
       const response = await fetch("/api/analyze", { method: "POST", body });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Analyse fehlgeschlagen.");
-      applyAnalysis(data as AnalysisResult);
+      applyAnalysis(data as AnalysisResult, localPreview);
       setMessage({ type: "ok", text: "Screenshot analysiert. Bitte erkannte Werte kurz prüfen." });
     } catch (error) {
       setMessage({ type: "error", text: error instanceof Error ? error.message : "Analyse fehlgeschlagen." });
     } finally { setAnalyzing(false); }
   }
 
-  function applyAnalysis(data: AnalysisResult) {
+  function applyAnalysis(data: AnalysisResult, localPreview: string) {
     const recognized = new Set<string>();
     setForm((current) => {
       const next = { ...current };
@@ -113,7 +134,8 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
     });
     const names = new Set(data.detectedObservations.map((name) => name.toLocaleLowerCase("de")));
     setSelected((current) => [...new Set([...current, ...tags.filter((tag) => names.has(tag.name.toLocaleLowerCase("de"))).map((tag) => tag.id)])]);
-    setDetected(recognized); setScreenshotPath(data.screenshotPath); setPreview(data.screenshotUrl || preview);
+    if (data.screenshotUrl) URL.revokeObjectURL(localPreview);
+    setDetected(recognized); updateScreenshot({ path: data.screenshotPath, preview: data.screenshotUrl || localPreview });
   }
 
   async function createTag() {
@@ -138,7 +160,7 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
       const response = await fetch(initialTrade ? `/api/trades/${initialTrade.id}` : "/api/trades", { method: initialTrade ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const data = await response.json(); if (!response.ok) throw new Error(data.error);
       if (initialTrade) { router.push(`/trades/${initialTrade.id}`); router.refresh(); return; }
-      setForm(emptyForm()); setSelected([]); setDetected(new Set()); setScreenshotPath(""); setPreview(""); setFileName("");
+      setForm(emptyForm()); setSelected([]); setDetected(new Set()); clearPendingScreenshot();
       setMessage({ type: "ok", text: "Trade gespeichert. Das Formular ist bereit für den nächsten Trade." });
     } catch (error) { setMessage({ type: "error", text: error instanceof Error ? error.message : "Trade konnte nicht gespeichert werden." }); }
     finally { setSaving(false); }
@@ -151,6 +173,7 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
       <div className="space-y-6">
         <div onDragEnter={(e) => { e.preventDefault(); setDragging(true); }} onDragOver={(e) => e.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={(e) => { e.preventDefault(); setDragging(false); void handleFile(e.dataTransfer.files[0]); }} className={`panel relative min-h-52 overflow-hidden border-dashed transition ${isDragging ? "border-lime bg-lime/[0.04]" : "hover:border-lime/40"}`}>
           {preview && <img src={preview} alt="Ausgewählter Chart-Screenshot" className="absolute inset-0 h-full w-full object-cover opacity-25" />}
+          {(preview || screenshotPath) && <button type="button" onClick={removeScreenshot} disabled={analyzing} className="absolute right-3 top-3 z-20 inline-flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-ink/90 px-3 py-2 text-xs font-semibold text-rose-400 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50" aria-label="Screenshot entfernen"><X className="h-3.5 w-3.5" /> Entfernen</button>}
           <button type="button" onClick={() => inputRef.current?.click()} disabled={analyzing} className="relative z-10 flex min-h-52 w-full flex-col items-center justify-center p-8 text-center">
             <span className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-line bg-ink/90 text-zinc-400">{analyzing ? <Loader2 className="h-5 w-5 animate-spin text-lime" /> : <ImagePlus className="h-5 w-5" />}</span>
             <span className="text-base font-semibold">{analyzing ? "Screenshot wird analysiert…" : fileName || (initialTrade ? "Screenshot ersetzen" : "Chart Screenshot hochladen")}</span>

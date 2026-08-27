@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PendingScreenshotProvider } from "@/components/pending-screenshot-provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -22,7 +23,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="de" className="dark">
-      <body>{children}</body>
+      <body><PendingScreenshotProvider>{children}</PendingScreenshotProvider></body>
     </html>
   );
 }
