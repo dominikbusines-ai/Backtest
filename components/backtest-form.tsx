@@ -56,7 +56,7 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const { screenshot: pendingScreenshot, setScreenshot: setPendingScreenshot, clearScreenshot: clearPendingScreenshot } = usePendingScreenshot();
   const [form, setForm] = useState<FormState>(() => initialTrade ? {
-    trade_date: initialTrade.trade_date, trade_time: initialTrade.trade_time ?? "", instrument: initialTrade.instrument,
+    trade_date: initialTrade.trade_date, trade_time: initialTrade.trade_time?.slice(0, 5) ?? "", instrument: initialTrade.instrument,
     timeframe: initialTrade.timeframe ?? "", direction: initialTrade.direction, entry: displayNum(initialTrade.entry),
     stop_loss: displayNum(initialTrade.stop_loss), take_profit: displayNum(initialTrade.take_profit), result_r: displayNum(initialTrade.result_r),
     result_type: initialTrade.result_type, confidence: initialTrade.confidence, context: initialTrade.context ?? "", entry_note: initialTrade.entry_note ?? "",
