@@ -39,7 +39,7 @@ Anschließend die Werte in `.env.local` eintragen.
 ## 2. Supabase vorbereiten
 
 1. Ein neues Supabase-Projekt erstellen.
-2. Im Supabase SQL Editor den vollständigen Inhalt von `supabase/migrations/001_initial.sql` ausführen.
+2. Im Supabase SQL Editor die Dateien aus `supabase/migrations/` in numerischer Reihenfolge vollständig ausführen.
 3. Unter **Project Settings → API** die Project URL und den `service_role`-Key kopieren.
 4. Folgende Werte in `.env.local` eintragen:
 
@@ -53,6 +53,7 @@ Das SQL-Schema erstellt:
 - `trades`
 - `tags`
 - `trade_tags`
+- optionale Nachbetrachtungen pro Trade
 - `tag_categories`
 - Indizes für die wichtigsten Filter
 - den privaten Storage-Bucket `trade-screenshots`

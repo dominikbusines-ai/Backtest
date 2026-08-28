@@ -3,7 +3,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { Filter, Image as ImageIcon, Loader2, Search, Trash2, X } from "lucide-react";
+import { Filter, Image as ImageIcon, Loader2, Pencil, Search, Trash2, X } from "lucide-react";
 import type { Direction, ResultType, Tag, Trade } from "@/lib/types";
 import { hasEveryTag } from "@/lib/stats";
 
@@ -87,7 +87,7 @@ export function TradesTable() {
         <td className="px-4 py-4 tabular-nums text-zinc-400">{trade.planned_rr?.toFixed(2) ?? "—"}</td><td className="px-4 py-4 text-zinc-400">{trade.confidence ?? "—"}/5</td>
         <td className="max-w-sm px-4 py-4"><div className="flex flex-wrap gap-1">{trade.tags.slice(0,3).map((tag) => <span key={tag.id} className="rounded bg-zinc-800 px-2 py-1 text-[10px] text-zinc-400">{tag.name}</span>)}{trade.tags.length > 3 && <span className="px-1 py-1 text-[10px] text-zinc-600">+{trade.tags.length - 3}</span>}</div></td>
         <td className="px-4 py-4 text-right">{trade.screenshot_signed_url ? <img src={trade.screenshot_signed_url} alt="Chart" className="ml-auto h-10 w-16 rounded object-cover" /> : <ImageIcon className="ml-auto h-4 w-4 text-zinc-700" />}</td>
-        <td className="px-5 py-4 text-right"><button type="button" onClick={() => void removeTrade(trade)} disabled={deletingId !== null} className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-rose-500/20 px-3 py-2 text-xs font-semibold text-rose-400 transition hover:bg-rose-500/5 disabled:cursor-not-allowed disabled:opacity-50" aria-label={`${trade.instrument} löschen`}>{deletingId === trade.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />} Löschen</button></td>
+        <td className="px-5 py-4 text-right"><div className="flex justify-end gap-2"><Link href={`/trades/${trade.id}/bearbeiten`} className="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-2 text-xs font-semibold text-zinc-300 transition hover:border-zinc-600 hover:text-white"><Pencil className="h-3.5 w-3.5" /> Bearbeiten</Link><button type="button" onClick={() => void removeTrade(trade)} disabled={deletingId !== null} className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/20 px-3 py-2 text-xs font-semibold text-rose-400 transition hover:bg-rose-500/5 disabled:cursor-not-allowed disabled:opacity-50" aria-label={`${trade.instrument} löschen`}>{deletingId === trade.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />} Löschen</button></div></td>
       </tr>)}{filtered.length === 0 && <tr><td colSpan={9} className="px-5 py-16 text-center text-sm text-zinc-600">Keine Trades für diese Filter.</td></tr>}</tbody></table></div>
     </section>
   </div>;

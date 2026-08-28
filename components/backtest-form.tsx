@@ -25,12 +25,14 @@ const today = () => new Date().toISOString().slice(0, 10);
 type FormState = {
   trade_date: string; trade_time: string; instrument: string; timeframe: string; direction: Direction;
   entry: string; stop_loss: string; take_profit: string; result_r: string; result_type: ResultType;
-  confidence: number | null; context: string; entry_note: string; mfe: string; mae: string;
+  confidence: number | null; context: string; entry_note: string; review_observation: string;
+  review_mistake: string; review_invalidation: string; mfe: string; mae: string;
 };
 
 const emptyForm = (): FormState => ({
   trade_date: today(), trade_time: "", instrument: "", timeframe: "", direction: "long", entry: "", stop_loss: "",
-  take_profit: "", result_r: "", result_type: "win", confidence: null, context: "", entry_note: "", mfe: "", mae: "",
+  take_profit: "", result_r: "", result_type: "win", confidence: null, context: "", entry_note: "", review_observation: "",
+  review_mistake: "", review_invalidation: "", mfe: "", mae: "",
 });
 
 const num = (value: string) => value.trim() === "" ? null : Number(value);
@@ -58,6 +60,7 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
     timeframe: initialTrade.timeframe ?? "", direction: initialTrade.direction, entry: displayNum(initialTrade.entry),
     stop_loss: displayNum(initialTrade.stop_loss), take_profit: displayNum(initialTrade.take_profit), result_r: displayNum(initialTrade.result_r),
     result_type: initialTrade.result_type, confidence: initialTrade.confidence, context: initialTrade.context ?? "", entry_note: initialTrade.entry_note ?? "",
+    review_observation: initialTrade.review_observation ?? "", review_mistake: initialTrade.review_mistake ?? "", review_invalidation: initialTrade.review_invalidation ?? "",
     mfe: displayNum(initialTrade.mfe), mae: displayNum(initialTrade.mae),
   } : emptyForm());
   const [tags, setTags] = useState<Tag[]>(LOCAL_TAGS);
@@ -154,7 +157,9 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
       trade_date: form.trade_date, trade_time: form.trade_time || null, instrument: form.instrument.trim().toUpperCase(), timeframe: form.timeframe.trim() || null,
       direction: form.direction, entry: num(form.entry), stop_loss: num(form.stop_loss), take_profit: num(form.take_profit), planned_rr: plannedRr,
       result_r: num(form.result_r), result_type: form.result_type, confidence: form.confidence, context: form.context.trim() || null,
-      entry_note: form.entry_note.trim() || null, screenshot_url: screenshotPath || null, mfe: num(form.mfe), mae: num(form.mae), tag_ids: selected,
+      entry_note: form.entry_note.trim() || null, review_observation: form.review_observation.trim() || null,
+      review_mistake: form.review_mistake.trim() || null, review_invalidation: form.review_invalidation.trim() || null,
+      screenshot_url: screenshotPath || null, mfe: num(form.mfe), mae: num(form.mae), tag_ids: selected,
     };
     try {
       const response = await fetch(initialTrade ? `/api/trades/${initialTrade.id}` : "/api/trades", { method: initialTrade ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -197,6 +202,15 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
             <label><span className="label">Stop Loss{marker("stop_loss")}</span><input className="field" type="number" step="any" placeholder="23472.50" value={form.stop_loss} onChange={(e) => update("stop_loss", e.target.value)} /></label>
             <label><span className="label">Take Profit{marker("take_profit")}</span><input className="field" type="number" step="any" placeholder="23395.00" value={form.take_profit} onChange={(e) => update("take_profit", e.target.value)} /></label>
             <label><span className="label">Geplantes R:R</span><input className="field" readOnly value={plannedRr === null ? "" : plannedRr.toFixed(2)} placeholder="Wird berechnet" /></label>
+          </div>
+        </section>
+
+        <section className="panel p-5 lg:p-6">
+          <div className="mb-5"><p className="text-sm font-semibold">Nachträgliche Auswertung <span className="font-normal text-zinc-600">· optional</span></p><p className="mt-1 text-xs text-zinc-600">Eigene Erkenntnisse werden später gesammelt in der Analyse angezeigt.</p></div>
+          <div className="grid gap-4 lg:grid-cols-3">
+            <label><span className="label">Was ist aufgefallen?</span><textarea className="field min-h-32 resize-y py-3" maxLength={5000} value={form.review_observation} onChange={(e) => update("review_observation", e.target.value)} placeholder="Was war im Nachhinein deutlich zu erkennen?" /></label>
+            <label><span className="label">Was wurde missachtet?</span><textarea className="field min-h-32 resize-y py-3" maxLength={5000} value={form.review_mistake} onChange={(e) => update("review_mistake", e.target.value)} placeholder="Welches Signal oder Risiko wurde übersehen?" /></label>
+            <label><span className="label">Was entkräftet den Entry?</span><textarea className="field min-h-32 resize-y py-3" maxLength={5000} value={form.review_invalidation} onChange={(e) => update("review_invalidation", e.target.value)} placeholder="Was nimmt der ursprünglichen Entry-Logik ihre Gültigkeit?" /></label>
           </div>
         </section>
 
