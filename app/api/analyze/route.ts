@@ -18,7 +18,7 @@ const schema = {
     stopLoss: { type: ["number", "null"] },
     takeProfit: { type: ["number", "null"] },
     riskReward: { type: ["number", "null"] },
-    resultType: { type: ["string", "null"], enum: ["win", "loss", "breakeven", null] },
+    resultType: { type: ["string", "null"], enum: ["win", "loss", "breakeven", "no_trade", null] },
     resultR: { type: ["number", "null"] },
     detectedObservations: { type: "array", items: { type: "string" } },
     detectedZones: { type: "array", items: { type: "string" } },
@@ -75,7 +75,7 @@ export async function POST(request: Request) {
           },
           {
             type: "text",
-            text: "Extrahiere die sichtbaren Chartdaten. Setze jedes nicht sicher erkennbare Datenfeld auf null und dessen Confidence-Wert auf 0. Beobachtungen und Zonen nur nennen, wenn sie im Bild ausdrücklich beschriftet oder eindeutig markiert sind. Confidence-Werte müssen zwischen 0 und 1 liegen.",
+            text: "Extrahiere die sichtbaren Chartdaten. Wenn kein ausgeführter oder eindeutig markierter Trade beziehungsweise Entry sichtbar ist, setze resultType auf no_trade; direction, entry, stopLoss, takeProfit, riskReward und resultR müssen dann null sein und ihre Confidence-Werte 0. Setze jedes andere nicht sicher erkennbare Datenfeld auf null und dessen Confidence-Wert auf 0. Beobachtungen und Zonen nur nennen, wenn sie im Bild ausdrücklich beschriftet oder eindeutig markiert sind. Confidence-Werte müssen zwischen 0 und 1 liegen.",
           },
         ],
       }],

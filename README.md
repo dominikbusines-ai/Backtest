@@ -6,11 +6,12 @@ Minimalistische Next.js-Web-App zur schnellen Erfassung und statistischen Auswer
 
 - Schnelle Trade-Erfassung mit Drag-and-Drop-Screenshot
 - Strukturierte KI-Extraktion ohne Bewertung des Trades
+- Eigener „Kein Trade“-Modus für bewusst ausgelassene Entries und unlogische Setups
 - Automatische Berechnung des geplanten Risk-to-Reward
 - Frei verwaltbare Tags und Kategorien
 - Trade-Tabelle mit Zeitraum-, Instrument-, Richtungs-, Ergebnis-, Confidence-, Kontext-, R:R- und Mehrfach-Tag-Filtern
 - Detailansicht, Bearbeitung und Löschung
-- Kennzahlen: Trades, Wins, Losses, Break-even, Winrate, Ø R, Gesamt-R, Ø Gewinner/Verlierer, Ø geplantes R:R, Profit Factor und Expectancy
+- Kennzahlen: Trades, Kein Trade, Wins, Losses, Break-even, Winrate, Ø R, Gesamt-R, Ø Gewinner/Verlierer, Ø geplantes R:R, Profit Factor und Expectancy
 - Analyse einzelner Tags und beliebiger Tag-Kombinationen
 - Direkter Vergleich zweier Tag-Gruppen
 - Private Supabase-Storage-Bucket für Screenshots
@@ -112,6 +113,7 @@ Das MVP ist als persönliche Single-User-App ohne eigenes Login ausgelegt. Die A
 ## Kennzahlen
 
 - **Winrate:** Gewinner / alle gefilterten Trades
+- **Kein Trade:** Wird separat gezählt und nicht in Winrate oder R-Kennzahlen einbezogen
 - **Ø R / Expectancy:** Summe der vorhandenen R-Ergebnisse / Trades mit R-Ergebnis
 - **Profit Factor:** Summe positiver R-Ergebnisse / Betrag der Summe negativer R-Ergebnisse
 - **Tag-Kombination:** Ein Trade wird nur berücksichtigt, wenn er alle ausgewählten Tags enthält

@@ -23,16 +23,16 @@ const LOCAL_TAGS: Tag[] = [
 const today = () => new Date().toISOString().slice(0, 10);
 
 type FormState = {
-  trade_date: string; trade_time: string; instrument: string; timeframe: string; direction: Direction;
+  trade_date: string; trade_time: string; instrument: string; timeframe: string; direction: Direction | null;
   entry: string; stop_loss: string; take_profit: string; result_r: string; result_type: ResultType;
   confidence: number | null; context: string; entry_note: string; review_observation: string;
-  review_mistake: string; review_invalidation: string; mfe: string; mae: string;
+  review_mistake: string; review_invalidation: string; review_illogical: string; mfe: string; mae: string;
 };
 
 const emptyForm = (): FormState => ({
   trade_date: today(), trade_time: "", instrument: "", timeframe: "", direction: "long", entry: "", stop_loss: "",
   take_profit: "", result_r: "", result_type: "win", confidence: null, context: "", entry_note: "", review_observation: "",
-  review_mistake: "", review_invalidation: "", mfe: "", mae: "",
+  review_mistake: "", review_invalidation: "", review_illogical: "", mfe: "", mae: "",
 });
 
 const num = (value: string) => value.trim() === "" ? null : Number(value);
@@ -61,6 +61,7 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
     stop_loss: displayNum(initialTrade.stop_loss), take_profit: displayNum(initialTrade.take_profit), result_r: displayNum(initialTrade.result_r),
     result_type: initialTrade.result_type, confidence: initialTrade.confidence, context: initialTrade.context ?? "", entry_note: initialTrade.entry_note ?? "",
     review_observation: initialTrade.review_observation ?? "", review_mistake: initialTrade.review_mistake ?? "", review_invalidation: initialTrade.review_invalidation ?? "",
+    review_illogical: initialTrade.review_illogical ?? "",
     mfe: displayNum(initialTrade.mfe), mae: displayNum(initialTrade.mae),
   } : emptyForm());
   const [tags, setTags] = useState<Tag[]>(LOCAL_TAGS);
@@ -97,13 +98,20 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
     fetch("/api/tags").then(async (response) => response.ok ? response.json() : Promise.reject()).then((data) => setTags(data.tags)).catch(() => undefined);
   }, []);
 
+  const noTrade = form.result_type === "no_trade";
   const plannedRr = useMemo(() => {
+    if (noTrade) return null;
     const entry = num(form.entry); const stop = num(form.stop_loss); const tp = num(form.take_profit);
     if (entry === null || stop === null || tp === null || entry === stop) return null;
     return Math.abs((tp - entry) / (entry - stop));
-  }, [form.entry, form.stop_loss, form.take_profit]);
+  }, [form.entry, form.stop_loss, form.take_profit, noTrade]);
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) { setForm((current) => ({ ...current, [key]: value })); }
+  function updateResultType(result_type: ResultType) {
+    setForm((current) => result_type === "no_trade"
+      ? { ...current, result_type, direction: null, confidence: null, entry: "", stop_loss: "", take_profit: "", result_r: "" }
+      : { ...current, result_type, direction: current.direction ?? "long" });
+  }
   function toggle(tag: string) { setSelected((current) => current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag]); }
 
   async function handleFile(file?: File) {
@@ -133,6 +141,9 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
       assign("instrument", data.instrument); assign("trade_date", data.date); assign("trade_time", data.time); assign("timeframe", data.timeframe);
       assign("direction", data.direction); assign("entry", data.entry === null ? null : String(data.entry)); assign("stop_loss", data.stopLoss === null ? null : String(data.stopLoss));
       assign("take_profit", data.takeProfit === null ? null : String(data.takeProfit)); assign("result_type", data.resultType); assign("result_r", data.resultR === null ? null : String(data.resultR));
+      if (data.resultType === "no_trade") {
+        next.direction = null; next.confidence = null; next.entry = ""; next.stop_loss = ""; next.take_profit = ""; next.result_r = "";
+      }
       return next;
     });
     const names = new Set(data.detectedObservations.map((name) => name.toLocaleLowerCase("de")));
@@ -155,10 +166,12 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
     setSaving(true); setMessage(null);
     const body: TradeInput = {
       trade_date: form.trade_date, trade_time: form.trade_time || null, instrument: form.instrument.trim().toUpperCase(), timeframe: form.timeframe.trim() || null,
-      direction: form.direction, entry: num(form.entry), stop_loss: num(form.stop_loss), take_profit: num(form.take_profit), planned_rr: plannedRr,
-      result_r: num(form.result_r), result_type: form.result_type, confidence: form.confidence, context: form.context.trim() || null,
+      direction: noTrade ? null : form.direction, entry: noTrade ? null : num(form.entry), stop_loss: noTrade ? null : num(form.stop_loss),
+      take_profit: noTrade ? null : num(form.take_profit), planned_rr: noTrade ? null : plannedRr,
+      result_r: noTrade ? null : num(form.result_r), result_type: form.result_type, confidence: noTrade ? null : form.confidence, context: form.context.trim() || null,
       entry_note: form.entry_note.trim() || null, review_observation: form.review_observation.trim() || null,
-      review_mistake: form.review_mistake.trim() || null, review_invalidation: form.review_invalidation.trim() || null,
+      review_mistake: noTrade ? null : form.review_mistake.trim() || null, review_invalidation: noTrade ? null : form.review_invalidation.trim() || null,
+      review_illogical: noTrade ? form.review_illogical.trim() || null : null,
       screenshot_url: screenshotPath || null, mfe: num(form.mfe), mae: num(form.mae), tag_ids: selected,
     };
     try {
@@ -166,7 +179,7 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
       const data = await response.json(); if (!response.ok) throw new Error(data.error);
       if (initialTrade) { router.push(`/trades/${initialTrade.id}`); router.refresh(); return; }
       setForm(emptyForm()); setSelected([]); setDetected(new Set()); clearPendingScreenshot();
-      setMessage({ type: "ok", text: "Trade gespeichert. Das Formular ist bereit für den nächsten Trade." });
+      setMessage({ type: "ok", text: "Eintrag gespeichert. Das Formular ist bereit für den nächsten Backtest." });
     } catch (error) { setMessage({ type: "error", text: error instanceof Error ? error.message : "Trade konnte nicht gespeichert werden." }); }
     finally { setSaving(false); }
   }
@@ -195,22 +208,21 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
             <label><span className="label">Uhrzeit{marker("trade_time")}</span><input className="field" type="time" value={form.trade_time} onChange={(e) => update("trade_time", e.target.value)} /></label>
             <label><span className="label">Instrument{marker("instrument")}</span><input className="field" placeholder="MNQ" value={form.instrument} onChange={(e) => update("instrument", e.target.value)} /></label>
             <label><span className="label">Timeframe{marker("timeframe")}</span><input className="field" placeholder="1m" value={form.timeframe} onChange={(e) => update("timeframe", e.target.value)} /></label>
-            <div className="sm:col-span-2"><span className="label">Richtung{marker("direction")}</span><div className="grid grid-cols-2 gap-2 rounded-lg bg-ink p-1">{(["long", "short"] as const).map((value) => <button key={value} type="button" onClick={() => update("direction", value)} className={`h-9 rounded-md text-xs font-bold uppercase transition ${form.direction === value ? value === "long" ? "bg-emerald-500/15 text-emerald-400" : "bg-rose-500/15 text-rose-400" : "text-zinc-600"}`}>{value}</button>)}</div></div>
-            <label><span className="label">Confidence</span><div className="flex h-11 gap-1">{[1,2,3,4,5].map((value) => <button key={value} type="button" onClick={() => update("confidence", value)} className={`flex-1 rounded-md border text-xs font-semibold ${form.confidence === value ? "border-lime/50 bg-lime/10 text-lime" : "border-line text-zinc-500"}`}>{value}</button>)}</div></label>
-            <label><span className="label">Ergebnis{marker("result_type")}</span><select className="field" value={form.result_type} onChange={(e) => update("result_type", e.target.value as ResultType)}><option value="win">Gewinn</option><option value="loss">Verlust</option><option value="breakeven">Break-even</option></select></label>
-            <label><span className="label">Entry{marker("entry")}</span><input className="field" type="number" step="any" placeholder="23450.25" value={form.entry} onChange={(e) => update("entry", e.target.value)} /></label>
-            <label><span className="label">Stop Loss{marker("stop_loss")}</span><input className="field" type="number" step="any" placeholder="23472.50" value={form.stop_loss} onChange={(e) => update("stop_loss", e.target.value)} /></label>
-            <label><span className="label">Take Profit{marker("take_profit")}</span><input className="field" type="number" step="any" placeholder="23395.00" value={form.take_profit} onChange={(e) => update("take_profit", e.target.value)} /></label>
+            <div className={`sm:col-span-2 ${noTrade ? "opacity-40" : ""}`}><span className="label">Richtung{marker("direction")}</span><div className="grid grid-cols-2 gap-2 rounded-lg bg-ink p-1">{(["long", "short"] as const).map((value) => <button key={value} type="button" disabled={noTrade} onClick={() => update("direction", value)} className={`h-9 rounded-md text-xs font-bold uppercase transition disabled:cursor-not-allowed ${form.direction === value ? value === "long" ? "bg-emerald-500/15 text-emerald-400" : "bg-rose-500/15 text-rose-400" : "text-zinc-600"}`}>{value}</button>)}</div></div>
+            <label className={noTrade ? "opacity-40" : ""}><span className="label">Confidence</span><div className="flex h-11 gap-1">{[1,2,3,4,5].map((value) => <button key={value} type="button" disabled={noTrade} onClick={() => update("confidence", value)} className={`flex-1 rounded-md border text-xs font-semibold disabled:cursor-not-allowed ${form.confidence === value ? "border-lime/50 bg-lime/10 text-lime" : "border-line text-zinc-500"}`}>{value}</button>)}</div></label>
+            <label><span className="label">Ergebnis{marker("result_type")}</span><select className="field" value={form.result_type} onChange={(e) => updateResultType(e.target.value as ResultType)}><option value="win">Gewinn</option><option value="loss">Verlust</option><option value="breakeven">Break-even</option><option value="no_trade">Kein Trade</option></select></label>
+            <label className={noTrade ? "opacity-40" : ""}><span className="label">Entry{marker("entry")}</span><input className="field disabled:cursor-not-allowed" disabled={noTrade} type="number" step="any" placeholder="23450.25" value={form.entry} onChange={(e) => update("entry", e.target.value)} /></label>
+            <label className={noTrade ? "opacity-40" : ""}><span className="label">Stop Loss{marker("stop_loss")}</span><input className="field disabled:cursor-not-allowed" disabled={noTrade} type="number" step="any" placeholder="23472.50" value={form.stop_loss} onChange={(e) => update("stop_loss", e.target.value)} /></label>
+            <label className={noTrade ? "opacity-40" : ""}><span className="label">Take Profit{marker("take_profit")}</span><input className="field disabled:cursor-not-allowed" disabled={noTrade} type="number" step="any" placeholder="23395.00" value={form.take_profit} onChange={(e) => update("take_profit", e.target.value)} /></label>
             <label><span className="label">Geplantes R:R</span><input className="field" readOnly value={plannedRr === null ? "" : plannedRr.toFixed(2)} placeholder="Wird berechnet" /></label>
           </div>
         </section>
 
         <section className="panel p-5 lg:p-6">
           <div className="mb-5"><p className="text-sm font-semibold">Nachträgliche Auswertung <span className="font-normal text-zinc-600">· optional</span></p><p className="mt-1 text-xs text-zinc-600">Eigene Erkenntnisse werden später gesammelt in der Analyse angezeigt.</p></div>
-          <div className="grid gap-4 lg:grid-cols-3">
+          <div className={`grid gap-4 ${noTrade ? "lg:grid-cols-2" : "lg:grid-cols-3"}`}>
             <label><span className="label">Was ist aufgefallen?</span><textarea className="field min-h-32 resize-y py-3" maxLength={5000} value={form.review_observation} onChange={(e) => update("review_observation", e.target.value)} placeholder="Was war im Nachhinein deutlich zu erkennen?" /></label>
-            <label><span className="label">Was wurde missachtet?</span><textarea className="field min-h-32 resize-y py-3" maxLength={5000} value={form.review_mistake} onChange={(e) => update("review_mistake", e.target.value)} placeholder="Welches Signal oder Risiko wurde übersehen?" /></label>
-            <label><span className="label">Was entkräftet den Entry?</span><textarea className="field min-h-32 resize-y py-3" maxLength={5000} value={form.review_invalidation} onChange={(e) => update("review_invalidation", e.target.value)} placeholder="Was nimmt der ursprünglichen Entry-Logik ihre Gültigkeit?" /></label>
+            {noTrade ? <label><span className="label">Was erschien unlogisch?</span><textarea className="field min-h-32 resize-y py-3" maxLength={5000} value={form.review_illogical} onChange={(e) => update("review_illogical", e.target.value)} placeholder="Was sprach gegen einen sinnvollen Entry?" /></label> : <><label><span className="label">Was wurde missachtet?</span><textarea className="field min-h-32 resize-y py-3" maxLength={5000} value={form.review_mistake} onChange={(e) => update("review_mistake", e.target.value)} placeholder="Welches Signal oder Risiko wurde übersehen?" /></label><label><span className="label">Was entkräftet den Entry?</span><textarea className="field min-h-32 resize-y py-3" maxLength={5000} value={form.review_invalidation} onChange={(e) => update("review_invalidation", e.target.value)} placeholder="Was nimmt der ursprünglichen Entry-Logik ihre Gültigkeit?" /></label></>}
           </div>
         </section>
 
@@ -222,10 +234,10 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
       </div>
 
       <aside className="space-y-6 xl:sticky xl:top-24 xl:self-start">
-        <section className="panel p-5"><p className="mb-4 text-sm font-semibold">Notizen</p><label><span className="label">Marktkontext <i className="normal-case tracking-normal">optional</i></span><textarea className="field min-h-32 resize-y py-3" value={form.context} onChange={(e) => update("context", e.target.value)} placeholder="5m bearish, Verkaufsdruck flacht ab…" /></label><label className="mt-4 block"><span className="label">Warum Entry? <i className="normal-case tracking-normal">optional</i></span><textarea className="field min-h-24 resize-y py-3" value={form.entry_note} onChange={(e) => update("entry_note", e.target.value)} placeholder="Kurze Notiz zum Entry" /></label></section>
-        <section className="panel p-5"><label><span className="label">Tatsächliches Ergebnis in R{marker("result_r")}</span><input className="field text-lg font-bold" type="number" step="any" placeholder="z. B. 1.82 oder -1" value={form.result_r} onChange={(e) => update("result_r", e.target.value)} /></label><div className="mt-4 grid grid-cols-2 gap-3"><label><span className="label">MFE</span><input className="field" type="number" step="any" placeholder="optional" value={form.mfe} onChange={(e) => update("mfe", e.target.value)} /></label><label><span className="label">MAE</span><input className="field" type="number" step="any" placeholder="optional" value={form.mae} onChange={(e) => update("mae", e.target.value)} /></label></div></section>
+        <section className="panel p-5"><p className="mb-4 text-sm font-semibold">Notizen</p><label><span className="label">Marktkontext <i className="normal-case tracking-normal">optional</i></span><textarea className="field min-h-32 resize-y py-3" value={form.context} onChange={(e) => update("context", e.target.value)} placeholder="5m bearish, Verkaufsdruck flacht ab…" /></label><label className="mt-4 block"><span className="label">{noTrade ? "Warum kein Entry" : "Warum Entry?"} <i className="normal-case tracking-normal">optional</i></span><textarea className="field min-h-24 resize-y py-3" value={form.entry_note} onChange={(e) => update("entry_note", e.target.value)} placeholder={noTrade ? "Warum wurde bewusst kein Entry genommen?" : "Kurze Notiz zum Entry"} /></label></section>
+        <section className="panel p-5"><label className={noTrade ? "opacity-40" : ""}><span className="label">Tatsächliches Ergebnis in R{marker("result_r")}</span><input className="field text-lg font-bold disabled:cursor-not-allowed" disabled={noTrade} type="number" step="any" placeholder="z. B. 1.82 oder -1" value={form.result_r} onChange={(e) => update("result_r", e.target.value)} /></label><div className="mt-4 grid grid-cols-2 gap-3"><label><span className="label">MFE</span><input className="field" type="number" step="any" placeholder="optional" value={form.mfe} onChange={(e) => update("mfe", e.target.value)} /></label><label><span className="label">MAE</span><input className="field" type="number" step="any" placeholder="optional" value={form.mae} onChange={(e) => update("mae", e.target.value)} /></label></div></section>
         {message && <div role="status" className={`rounded-xl border p-3 text-xs ${message.type === "ok" ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-400" : "border-rose-500/20 bg-rose-500/5 text-rose-400"}`}>{message.text}</div>}
-        <button type="button" onClick={() => void save()} disabled={saving || analyzing} className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-lime text-sm font-extrabold text-ink transition hover:bg-[#c5ff5b] disabled:cursor-not-allowed disabled:opacity-50">{saving && <Loader2 className="h-4 w-4 animate-spin" />}{initialTrade ? "Änderungen speichern" : "Trade speichern"}</button>
+        <button type="button" onClick={() => void save()} disabled={saving || analyzing} className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-lime text-sm font-extrabold text-ink transition hover:bg-[#c5ff5b] disabled:cursor-not-allowed disabled:opacity-50">{saving && <Loader2 className="h-4 w-4 animate-spin" />}{initialTrade ? "Änderungen speichern" : noTrade ? "Kein Trade speichern" : "Trade speichern"}</button>
         {!initialTrade && <p className="text-center text-[11px] text-zinc-700">Nach dem Speichern ist das Formular direkt bereit.</p>}
       </aside>
     </div>

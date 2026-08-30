@@ -1,5 +1,5 @@
 export type Direction = "long" | "short";
-export type ResultType = "win" | "loss" | "breakeven";
+export type ResultType = "win" | "loss" | "breakeven" | "no_trade";
 
 export type TagCategory = {
   id: string;
@@ -22,7 +22,7 @@ export type Trade = {
   trade_time: string | null;
   instrument: string;
   timeframe: string | null;
-  direction: Direction;
+  direction: Direction | null;
   entry: number | null;
   stop_loss: number | null;
   take_profit: number | null;
@@ -35,6 +35,7 @@ export type Trade = {
   review_observation: string | null;
   review_mistake: string | null;
   review_invalidation: string | null;
+  review_illogical: string | null;
   screenshot_url: string | null;
   screenshot_signed_url?: string | null;
   mfe: number | null;
@@ -67,6 +68,7 @@ export type AnalysisResult = {
 
 export type Stats = {
   trades: number;
+  noTrades: number;
   wins: number;
   losses: number;
   breakeven: number;
