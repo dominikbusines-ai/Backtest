@@ -5,6 +5,7 @@ Minimalistische Next.js-Web-App zur schnellen Erfassung und statistischen Auswer
 ## Funktionen
 
 - Schnelle Trade-Erfassung mit Drag-and-Drop-Screenshot
+- Kennzeichnung jedes Eintrags als Backtest oder echter Live Trade
 - Strukturierte KI-Extraktion ohne Bewertung des Trades
 - Eigener „Kein Trade“-Modus für bewusst ausgelassene Entries und unlogische Setups
 - Automatische Berechnung des geplanten Risk-to-Reward
@@ -12,6 +13,7 @@ Minimalistische Next.js-Web-App zur schnellen Erfassung und statistischen Auswer
 - Trade-Tabelle mit Zeitraum-, Instrument-, Richtungs-, Ergebnis-, Confidence-, Kontext-, R:R- und Mehrfach-Tag-Filtern
 - Detailansicht, Bearbeitung und Löschung
 - Kennzahlen: Trades, Kein Trade, Wins, Losses, Break-even, Winrate, Ø R, Gesamt-R, Ø Gewinner/Verlierer, Ø geplantes R:R, Profit Factor und Expectancy
+- Vollständig getrennte Analyse von Backtests und Live Trades
 - Analyse einzelner Tags und beliebiger Tag-Kombinationen
 - Direkter Vergleich zweier Tag-Gruppen
 - Private Supabase-Storage-Bucket für Screenshots
@@ -55,6 +57,7 @@ Das SQL-Schema erstellt:
 - `tags`
 - `trade_tags`
 - optionale Nachbetrachtungen pro Trade
+- Eintragstyp für Backtest oder Live Trade; bestehende Einträge bleiben Backtests
 - `tag_categories`
 - Indizes für die wichtigsten Filter
 - den privaten Storage-Bucket `trade-screenshots`
@@ -117,5 +120,6 @@ Das MVP ist als persönliche Single-User-App ohne eigenes Login ausgelegt. Die A
 - **Ø R / Expectancy:** Summe der vorhandenen R-Ergebnisse / Trades mit R-Ergebnis
 - **Profit Factor:** Summe positiver R-Ergebnisse / Betrag der Summe negativer R-Ergebnisse
 - **Tag-Kombination:** Ein Trade wird nur berücksichtigt, wenn er alle ausgewählten Tags enthält
+- **Backtest/Live:** Beide Bereiche werden getrennt berechnet und nicht miteinander vermischt
 
 MFE und MAE sind optionale numerische Felder und werden gespeichert, derzeit aber nicht als eigene Analysekennzahl verwendet.

@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, ImagePlus, Loader2, Plus, Sparkles, X } from "lucide-react";
 import { usePendingScreenshot, type PendingScreenshot } from "@/components/pending-screenshot-provider";
-import type { AnalysisResult, Direction, ResultType, Tag, Trade, TradeInput } from "@/lib/types";
+import type { AnalysisResult, Direction, ResultType, Tag, Trade, TradeInput, TradeMode } from "@/lib/types";
 
 const LOCAL_TAGS: Tag[] = [
   ["10000000-0000-4000-8000-000000000001", "1m BOS"], ["10000000-0000-4000-8000-000000000002", "5m BOS"],
@@ -23,14 +23,14 @@ const LOCAL_TAGS: Tag[] = [
 const today = () => new Date().toISOString().slice(0, 10);
 
 type FormState = {
-  trade_date: string; trade_time: string; instrument: string; timeframe: string; direction: Direction | null;
+  trade_date: string; trade_time: string; trade_mode: TradeMode; instrument: string; timeframe: string; direction: Direction | null;
   entry: string; stop_loss: string; take_profit: string; result_r: string; result_type: ResultType;
   confidence: number | null; context: string; entry_note: string; review_observation: string;
   review_mistake: string; review_invalidation: string; review_illogical: string; mfe: string; mae: string;
 };
 
 const emptyForm = (): FormState => ({
-  trade_date: today(), trade_time: "", instrument: "", timeframe: "", direction: "long", entry: "", stop_loss: "",
+  trade_date: today(), trade_time: "", trade_mode: "backtest", instrument: "", timeframe: "", direction: "long", entry: "", stop_loss: "",
   take_profit: "", result_r: "", result_type: "win", confidence: null, context: "", entry_note: "", review_observation: "",
   review_mistake: "", review_invalidation: "", review_illogical: "", mfe: "", mae: "",
 });
@@ -56,7 +56,7 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const { screenshot: pendingScreenshot, setScreenshot: setPendingScreenshot, clearScreenshot: clearPendingScreenshot } = usePendingScreenshot();
   const [form, setForm] = useState<FormState>(() => initialTrade ? {
-    trade_date: initialTrade.trade_date, trade_time: initialTrade.trade_time?.slice(0, 5) ?? "", instrument: initialTrade.instrument,
+    trade_date: initialTrade.trade_date, trade_time: initialTrade.trade_time?.slice(0, 5) ?? "", trade_mode: initialTrade.trade_mode, instrument: initialTrade.instrument,
     timeframe: initialTrade.timeframe ?? "", direction: initialTrade.direction, entry: displayNum(initialTrade.entry),
     stop_loss: displayNum(initialTrade.stop_loss), take_profit: displayNum(initialTrade.take_profit), result_r: displayNum(initialTrade.result_r),
     result_type: initialTrade.result_type, confidence: initialTrade.confidence, context: initialTrade.context ?? "", entry_note: initialTrade.entry_note ?? "",
@@ -165,7 +165,7 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
     if (!form.trade_date || !form.instrument.trim()) { setMessage({ type: "error", text: "Datum und Instrument sind erforderlich." }); return; }
     setSaving(true); setMessage(null);
     const body: TradeInput = {
-      trade_date: form.trade_date, trade_time: form.trade_time || null, instrument: form.instrument.trim().toUpperCase(), timeframe: form.timeframe.trim() || null,
+      trade_date: form.trade_date, trade_time: form.trade_time || null, trade_mode: form.trade_mode, instrument: form.instrument.trim().toUpperCase(), timeframe: form.timeframe.trim() || null,
       direction: noTrade ? null : form.direction, entry: noTrade ? null : num(form.entry), stop_loss: noTrade ? null : num(form.stop_loss),
       take_profit: noTrade ? null : num(form.take_profit), planned_rr: noTrade ? null : plannedRr,
       result_r: noTrade ? null : num(form.result_r), result_type: form.result_type, confidence: noTrade ? null : form.confidence, context: form.context.trim() || null,
@@ -203,6 +203,7 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
 
         <section className="panel p-5 lg:p-6">
           <div className="mb-5"><p className="text-sm font-semibold">Trade-Daten</p><p className="mt-1 text-xs text-zinc-600">Erkannte Werte bleiben immer bearbeitbar.</p></div>
+          <div className="mb-5"><span className="label">Art des Eintrags</span><div className="grid grid-cols-2 gap-2 rounded-xl bg-ink p-1.5">{(["backtest", "live"] as const).map((value) => <button key={value} type="button" onClick={() => update("trade_mode", value)} className={`rounded-lg px-3 py-3 text-left transition ${form.trade_mode === value ? "bg-lime/10 text-lime ring-1 ring-lime/30" : "text-zinc-500 hover:text-zinc-300"}`}><span className="block text-xs font-bold">{value === "backtest" ? "Backtest" : "Live Trade"}</span><span className="mt-1 block text-[10px] font-normal text-zinc-600">{value === "backtest" ? "Simulierter Trade" : "Echter Trade"}</span></button>)}</div></div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <label><span className="label">Datum{marker("trade_date")}</span><input className="field" type="date" value={form.trade_date} onChange={(e) => update("trade_date", e.target.value)} /></label>
             <label><span className="label">Uhrzeit{marker("trade_time")}</span><input className="field" type="time" value={form.trade_time} onChange={(e) => update("trade_time", e.target.value)} /></label>
@@ -237,7 +238,7 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
         <section className="panel p-5"><p className="mb-4 text-sm font-semibold">Notizen</p><label><span className="label">Marktkontext <i className="normal-case tracking-normal">optional</i></span><textarea className="field min-h-32 resize-y py-3" value={form.context} onChange={(e) => update("context", e.target.value)} placeholder="5m bearish, Verkaufsdruck flacht ab…" /></label><label className="mt-4 block"><span className="label">{noTrade ? "Warum kein Entry" : "Warum Entry?"} <i className="normal-case tracking-normal">optional</i></span><textarea className="field min-h-24 resize-y py-3" value={form.entry_note} onChange={(e) => update("entry_note", e.target.value)} placeholder={noTrade ? "Warum wurde bewusst kein Entry genommen?" : "Kurze Notiz zum Entry"} /></label></section>
         <section className="panel p-5"><label className={noTrade ? "opacity-40" : ""}><span className="label">Tatsächliches Ergebnis in R{marker("result_r")}</span><input className="field text-lg font-bold disabled:cursor-not-allowed" disabled={noTrade} type="number" step="any" placeholder="z. B. 1.82 oder -1" value={form.result_r} onChange={(e) => update("result_r", e.target.value)} /></label><div className="mt-4 grid grid-cols-2 gap-3"><label><span className="label">MFE</span><input className="field" type="number" step="any" placeholder="optional" value={form.mfe} onChange={(e) => update("mfe", e.target.value)} /></label><label><span className="label">MAE</span><input className="field" type="number" step="any" placeholder="optional" value={form.mae} onChange={(e) => update("mae", e.target.value)} /></label></div></section>
         {message && <div role="status" className={`rounded-xl border p-3 text-xs ${message.type === "ok" ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-400" : "border-rose-500/20 bg-rose-500/5 text-rose-400"}`}>{message.text}</div>}
-        <button type="button" onClick={() => void save()} disabled={saving || analyzing} className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-lime text-sm font-extrabold text-ink transition hover:bg-[#c5ff5b] disabled:cursor-not-allowed disabled:opacity-50">{saving && <Loader2 className="h-4 w-4 animate-spin" />}{initialTrade ? "Änderungen speichern" : noTrade ? "Kein Trade speichern" : "Trade speichern"}</button>
+        <button type="button" onClick={() => void save()} disabled={saving || analyzing} className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-lime text-sm font-extrabold text-ink transition hover:bg-[#c5ff5b] disabled:cursor-not-allowed disabled:opacity-50">{saving && <Loader2 className="h-4 w-4 animate-spin" />}{initialTrade ? "Änderungen speichern" : noTrade ? "Kein Trade speichern" : form.trade_mode === "live" ? "Live Trade speichern" : "Backtest speichern"}</button>
         {!initialTrade && <p className="text-center text-[11px] text-zinc-700">Nach dem Speichern ist das Formular direkt bereit.</p>}
       </aside>
     </div>

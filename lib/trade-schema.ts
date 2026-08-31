@@ -5,6 +5,7 @@ const nullableNumber = z.number().finite().nullable();
 export const tradeInputSchema = z.object({
   trade_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   trade_time: z.string().regex(/^\d{2}:\d{2}$/).nullable(),
+  trade_mode: z.enum(["backtest", "live"]),
   instrument: z.string().trim().min(1).max(30),
   timeframe: z.string().trim().max(20).nullable(),
   direction: z.enum(["long", "short"]).nullable(),

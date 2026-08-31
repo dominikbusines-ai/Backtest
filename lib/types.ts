@@ -1,5 +1,6 @@
 export type Direction = "long" | "short";
 export type ResultType = "win" | "loss" | "breakeven" | "no_trade";
+export type TradeMode = "backtest" | "live";
 
 export type TagCategory = {
   id: string;
@@ -20,6 +21,7 @@ export type Trade = {
   created_at: string;
   trade_date: string;
   trade_time: string | null;
+  trade_mode: TradeMode;
   instrument: string;
   timeframe: string | null;
   direction: Direction | null;
