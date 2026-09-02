@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { PendingScreenshotProvider } from "@/components/pending-screenshot-provider";
 import "./globals.css";
 
@@ -18,6 +18,14 @@ export const metadata: Metadata = {
     description: "Trades schnell erfassen, Muster vergleichen und den eigenen Edge messen.",
     images: ["/og.png"],
   },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#080a0d",
+  colorScheme: "dark",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

@@ -14,6 +14,7 @@ Minimalistische Next.js-Web-App zur schnellen Erfassung und statistischen Auswer
 - Detailansicht, Bearbeitung und Löschung
 - Kennzahlen: Trades, Kein Trade, Wins, Losses, Break-even, Winrate, Ø R, Gesamt-R, Ø Gewinner/Verlierer, Ø geplantes R:R, Profit Factor und Expectancy
 - Vollständig getrennte Analyse von Backtests und Live Trades
+- iPhone-optimierte Bedienung mit Safe-Area-Unterstützung, mobiler Navigation und Kartenansichten
 - Analyse einzelner Tags und beliebiger Tag-Kombinationen
 - Direkter Vergleich zweier Tag-Gruppen
 - Private Supabase-Storage-Bucket für Screenshots

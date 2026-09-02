@@ -7,6 +7,10 @@ import { Filter, Image as ImageIcon, Loader2, Pencil, Search, Trash2, X } from "
 import type { Direction, ResultType, Tag, Trade, TradeMode } from "@/lib/types";
 import { hasEveryTag } from "@/lib/stats";
 
+const formatDate = (date: string) => new Intl.DateTimeFormat("de-DE").format(new Date(`${date}T12:00:00`));
+const resultText = (trade: Trade) => trade.result_type === "no_trade" ? "Kein Trade" : trade.result_r === null ? "—" : `${trade.result_r > 0 ? "+" : ""}${trade.result_r.toFixed(2)}R`;
+const resultTone = (trade: Trade) => (trade.result_r ?? 0) > 0 ? "text-emerald-400" : (trade.result_r ?? 0) < 0 ? "text-rose-400" : "text-zinc-400";
+
 export function TradesTable() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [tags, setTags] = useState<Tag[]>([]);
@@ -43,7 +47,7 @@ export function TradesTable() {
   function reset() { setFrom(""); setTo(""); setTradeMode(""); setInstrument(""); setDirection(""); setResult(""); setConfidence(""); setContext(""); setMinRr(""); setSelectedTags([]); }
 
   async function removeTrade(trade: Trade) {
-    if (!window.confirm(`${trade.instrument} vom ${new Intl.DateTimeFormat("de-DE").format(new Date(`${trade.trade_date}T12:00:00`))} endgültig löschen?`)) return;
+    if (!window.confirm(`${trade.instrument} vom ${formatDate(trade.trade_date)} endgültig löschen?`)) return;
     setDeletingId(trade.id); setDeleteError("");
     try {
       const response = await fetch(`/api/trades/${trade.id}`, { method: "DELETE" });
@@ -58,11 +62,11 @@ export function TradesTable() {
   }
 
   if (loading) return <div className="panel flex min-h-72 items-center justify-center text-sm text-zinc-500"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Trades werden geladen</div>;
-  if (error) return <div className="panel p-8"><p className="text-sm font-semibold">Supabase-Verbindung erforderlich</p><p className="mt-2 max-w-xl text-sm text-zinc-500">{error} Führen Sie das Schema aus und tragen Sie die Variablen aus .env.example ein.</p></div>;
+  if (error) return <div className="panel p-5 sm:p-8"><p className="text-sm font-semibold">Supabase-Verbindung erforderlich</p><p className="mt-2 max-w-xl text-sm text-zinc-500">{error} Führen Sie das Schema aus und tragen Sie die Variablen aus .env.example ein.</p></div>;
 
   return <div className="space-y-5">
-    <section className="panel p-5">
-      <div className="mb-4 flex items-center justify-between"><div className="flex items-center gap-2 text-sm font-semibold"><Filter className="h-4 w-4 text-lime" /> Filter {active > 0 && <span className="rounded-full bg-lime/10 px-2 py-0.5 text-[10px] text-lime">{active}</span>}</div>{active > 0 && <button onClick={reset} className="flex items-center gap-1 text-xs text-zinc-500 hover:text-white"><X className="h-3.5 w-3.5" /> zurücksetzen</button>}</div>
+    <section className="panel p-4 sm:p-5">
+      <div className="mb-4 flex items-center justify-between gap-3"><div className="flex items-center gap-2 text-sm font-semibold"><Filter className="h-4 w-4 text-lime" /> Filter {active > 0 && <span className="rounded-full bg-lime/10 px-2 py-0.5 text-[10px] text-lime">{active}</span>}</div>{active > 0 && <button onClick={reset} className="flex min-h-11 items-center gap-1 px-1 text-xs text-zinc-500 hover:text-white"><X className="h-3.5 w-3.5" /> zurücksetzen</button>}</div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-9">
         <label><span className="label">Von</span><input className="field" type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></label>
         <label><span className="label">Bis</span><input className="field" type="date" value={to} onChange={(e) => setTo(e.target.value)} /></label>
@@ -79,15 +83,28 @@ export function TradesTable() {
 
     {deleteError && <div role="alert" className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-xs text-rose-400">{deleteError}</div>}
 
-    <section className="panel overflow-hidden">
+    <section className="space-y-3 md:hidden" aria-label="Trades als Karten">
+      <div className="flex items-center justify-between px-1"><p className="text-sm font-semibold">{filtered.length} {filtered.length === 1 ? "Eintrag" : "Einträge"}</p><p className="text-xs text-zinc-600">{trades.length !== filtered.length ? `${trades.length} gesamt` : "Neueste zuerst"}</p></div>
+      {filtered.map((trade) => <article key={trade.id} className="panel overflow-hidden">
+        <Link href={`/trades/${trade.id}`} className="block p-4">
+          <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${trade.trade_mode === "live" ? "bg-sky-500/10 text-sky-400" : "bg-zinc-800 text-zinc-500"}`}>{trade.trade_mode === "live" ? "Live" : "Backtest"}</span><span className="text-xs text-zinc-600">{formatDate(trade.trade_date)}{trade.trade_time ? ` · ${trade.trade_time.slice(0,5)}` : ""}</span></div><p className="mt-3 truncate text-lg font-bold text-zinc-100">{trade.instrument}<span className="ml-2 text-xs font-normal text-zinc-600">{trade.timeframe}</span></p></div>{trade.screenshot_signed_url ? <img src={trade.screenshot_signed_url} alt="Chart" className="h-16 w-24 shrink-0 rounded-lg object-cover" /> : <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-ink"><ImageIcon className="h-5 w-5 text-zinc-700" /></span>}</div>
+          <div className="mt-4 grid grid-cols-3 gap-3 border-t border-line pt-4"><div><span className="label">Richtung</span><p className={`text-xs font-bold ${trade.direction === "long" ? "text-emerald-400" : trade.direction === "short" ? "text-rose-400" : "text-zinc-500"}`}>{trade.direction?.toUpperCase() ?? "—"}</p></div><div><span className="label">Ergebnis</span><p className={`text-sm font-bold tabular-nums ${resultTone(trade)}`}>{resultText(trade)}</p></div><div><span className="label">R:R</span><p className="text-sm font-semibold tabular-nums text-zinc-400">{trade.planned_rr?.toFixed(2) ?? "—"}</p></div></div>
+          {trade.tags.length > 0 && <div className="mt-4 flex flex-wrap gap-1.5">{trade.tags.slice(0,4).map((tag) => <span key={tag.id} className="rounded bg-zinc-800 px-2 py-1 text-[10px] text-zinc-400">{tag.name}</span>)}{trade.tags.length > 4 && <span className="px-1 py-1 text-[10px] text-zinc-600">+{trade.tags.length - 4}</span>}</div>}
+        </Link>
+        <div className="grid grid-cols-2 border-t border-line"><Link href={`/trades/${trade.id}/bearbeiten`} className="flex min-h-12 items-center justify-center gap-2 border-r border-line text-xs font-semibold text-zinc-300"><Pencil className="h-4 w-4" /> Bearbeiten</Link><button type="button" onClick={() => void removeTrade(trade)} disabled={deletingId !== null} className="flex min-h-12 items-center justify-center gap-2 text-xs font-semibold text-rose-400 disabled:opacity-50">{deletingId === trade.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Löschen</button></div>
+      </article>)}
+      {filtered.length === 0 && <div className="panel px-4 py-14 text-center text-sm text-zinc-600">Keine Einträge für diese Filter.</div>}
+    </section>
+
+    <section className="panel hidden overflow-hidden md:block">
       <div className="flex items-center justify-between border-b border-line px-5 py-4"><p className="text-sm font-semibold">{filtered.length} {filtered.length === 1 ? "Eintrag" : "Einträge"}</p><p className="text-xs text-zinc-600">{trades.length !== filtered.length ? `${trades.length} gesamt` : "Neueste zuerst"}</p></div>
       <div className="overflow-x-auto"><table className="w-full min-w-[1180px] text-left"><thead className="bg-ink/50 text-[10px] uppercase tracking-[0.13em] text-zinc-600"><tr><th className="px-5 py-3">Datum</th><th className="px-4 py-3">Typ</th><th className="px-4 py-3">Instrument</th><th className="px-4 py-3">Richtung</th><th className="px-4 py-3">Ergebnis</th><th className="px-4 py-3">R:R</th><th className="px-4 py-3">Confidence</th><th className="px-4 py-3">Tags</th><th className="px-4 py-3 text-right">Chart</th><th className="px-5 py-3 text-right">Aktion</th></tr></thead>
       <tbody className="divide-y divide-line">{filtered.map((trade) => <tr key={trade.id} className="group text-sm transition hover:bg-white/[0.02]">
-        <td className="px-5 py-4"><Link href={`/trades/${trade.id}`} className="font-medium text-zinc-200 group-hover:text-lime">{new Intl.DateTimeFormat("de-DE").format(new Date(`${trade.trade_date}T12:00:00`))}</Link><span className="ml-2 text-xs text-zinc-600">{trade.trade_time?.slice(0,5)}</span></td>
+        <td className="px-5 py-4"><Link href={`/trades/${trade.id}`} className="font-medium text-zinc-200 group-hover:text-lime">{formatDate(trade.trade_date)}</Link><span className="ml-2 text-xs text-zinc-600">{trade.trade_time?.slice(0,5)}</span></td>
         <td className="px-4 py-4"><span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${trade.trade_mode === "live" ? "bg-sky-500/10 text-sky-400" : "bg-zinc-800 text-zinc-500"}`}>{trade.trade_mode === "live" ? "Live" : "Backtest"}</span></td>
         <td className="px-4 py-4 font-semibold">{trade.instrument}<span className="ml-2 text-xs font-normal text-zinc-600">{trade.timeframe}</span></td>
         <td className={`px-4 py-4 text-xs font-semibold uppercase ${trade.direction === "long" ? "text-emerald-400" : trade.direction === "short" ? "text-rose-400" : "text-zinc-500"}`}>{trade.direction?.toUpperCase() ?? "—"}</td>
-        <td className={`px-4 py-4 font-semibold tabular-nums ${(trade.result_r ?? 0) > 0 ? "text-emerald-400" : (trade.result_r ?? 0) < 0 ? "text-rose-400" : "text-zinc-400"}`}>{trade.result_type === "no_trade" ? "Kein Trade" : trade.result_r === null ? "—" : `${trade.result_r > 0 ? "+" : ""}${trade.result_r.toFixed(2)}R`}</td>
+        <td className={`px-4 py-4 font-semibold tabular-nums ${resultTone(trade)}`}>{resultText(trade)}</td>
         <td className="px-4 py-4 tabular-nums text-zinc-400">{trade.planned_rr?.toFixed(2) ?? "—"}</td><td className="px-4 py-4 text-zinc-400">{trade.confidence === null ? "—" : `${trade.confidence}/5`}</td>
         <td className="max-w-sm px-4 py-4"><div className="flex flex-wrap gap-1">{trade.tags.slice(0,3).map((tag) => <span key={tag.id} className="rounded bg-zinc-800 px-2 py-1 text-[10px] text-zinc-400">{tag.name}</span>)}{trade.tags.length > 3 && <span className="px-1 py-1 text-[10px] text-zinc-600">+{trade.tags.length - 3}</span>}</div></td>
         <td className="px-4 py-4 text-right">{trade.screenshot_signed_url ? <img src={trade.screenshot_signed_url} alt="Chart" className="ml-auto h-10 w-16 rounded object-cover" /> : <ImageIcon className="ml-auto h-4 w-4 text-zinc-700" />}</td>
