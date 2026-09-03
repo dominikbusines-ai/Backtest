@@ -29,10 +29,31 @@ type FormState = {
   review_mistake: string; review_invalidation: string; review_illogical: string; mfe: string; mae: string;
 };
 
+type StoredDraft = {
+  version: 1;
+  form: FormState;
+  selected: string[];
+  detected: string[];
+  screenshot: PendingScreenshot;
+  addingTag: boolean;
+  newTag: string;
+};
+
+const DRAFT_STORAGE_PREFIX = "edgelog:trade-draft:v1";
+
 const emptyForm = (): FormState => ({
   trade_date: today(), trade_time: "", trade_mode: "backtest", instrument: "", timeframe: "", direction: "long", entry: "", stop_loss: "",
   take_profit: "", result_r: "", result_type: "win", confidence: null, context: "", entry_note: "", review_observation: "",
   review_mistake: "", review_invalidation: "", review_illogical: "", mfe: "", mae: "",
+});
+
+const formFromTrade = (trade: Trade): FormState => ({
+  trade_date: trade.trade_date, trade_time: trade.trade_time?.slice(0, 5) ?? "", trade_mode: trade.trade_mode, instrument: trade.instrument,
+  timeframe: trade.timeframe ?? "", direction: trade.direction, entry: displayNum(trade.entry), stop_loss: displayNum(trade.stop_loss),
+  take_profit: displayNum(trade.take_profit), result_r: displayNum(trade.result_r), result_type: trade.result_type, confidence: trade.confidence,
+  context: trade.context ?? "", entry_note: trade.entry_note ?? "", review_observation: trade.review_observation ?? "",
+  review_mistake: trade.review_mistake ?? "", review_invalidation: trade.review_invalidation ?? "", review_illogical: trade.review_illogical ?? "",
+  mfe: displayNum(trade.mfe), mae: displayNum(trade.mae),
 });
 
 const num = (value: string) => value.trim() === "" ? null : Number(value);
@@ -55,15 +76,8 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const { screenshot: pendingScreenshot, setScreenshot: setPendingScreenshot, clearScreenshot: clearPendingScreenshot } = usePendingScreenshot();
-  const [form, setForm] = useState<FormState>(() => initialTrade ? {
-    trade_date: initialTrade.trade_date, trade_time: initialTrade.trade_time?.slice(0, 5) ?? "", trade_mode: initialTrade.trade_mode, instrument: initialTrade.instrument,
-    timeframe: initialTrade.timeframe ?? "", direction: initialTrade.direction, entry: displayNum(initialTrade.entry),
-    stop_loss: displayNum(initialTrade.stop_loss), take_profit: displayNum(initialTrade.take_profit), result_r: displayNum(initialTrade.result_r),
-    result_type: initialTrade.result_type, confidence: initialTrade.confidence, context: initialTrade.context ?? "", entry_note: initialTrade.entry_note ?? "",
-    review_observation: initialTrade.review_observation ?? "", review_mistake: initialTrade.review_mistake ?? "", review_invalidation: initialTrade.review_invalidation ?? "",
-    review_illogical: initialTrade.review_illogical ?? "",
-    mfe: displayNum(initialTrade.mfe), mae: displayNum(initialTrade.mae),
-  } : emptyForm());
+  const draftKey = `${DRAFT_STORAGE_PREFIX}:${initialTrade ? `edit:${initialTrade.id}` : "new"}`;
+  const [form, setForm] = useState<FormState>(() => initialTrade ? formFromTrade(initialTrade) : emptyForm());
   const [tags, setTags] = useState<Tag[]>(LOCAL_TAGS);
   const [selected, setSelected] = useState<string[]>(initialTrade?.tags.map((tag) => tag.id) ?? []);
   const [detected, setDetected] = useState<Set<string>>(new Set());
@@ -78,6 +92,7 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
   const [message, setMessage] = useState<{ type: "ok" | "error"; text: string } | null>(null);
   const [addingTag, setAddingTag] = useState(false);
   const [newTag, setNewTag] = useState("");
+  const [draftHydrated, setDraftHydrated] = useState(false);
   const screenshot = initialTrade ? editedScreenshot : pendingScreenshot;
   const { path: screenshotPath, preview, fileName } = screenshot;
 
@@ -97,6 +112,45 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
   useEffect(() => {
     fetch("/api/tags").then(async (response) => response.ok ? response.json() : Promise.reject()).then((data) => setTags(data.tags)).catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    let draft: Partial<StoredDraft> | null = null;
+    try {
+      const stored = window.localStorage.getItem(draftKey);
+      if (stored) draft = JSON.parse(stored) as Partial<StoredDraft>;
+    } catch {
+      window.localStorage.removeItem(draftKey);
+    }
+    const restoreFrame = window.requestAnimationFrame(() => {
+      if (draft?.version === 1 && draft.form) {
+        setForm((current) => ({ ...current, ...draft.form }));
+        if (Array.isArray(draft.selected)) setSelected(draft.selected.filter((value): value is string => typeof value === "string"));
+        if (Array.isArray(draft.detected)) setDetected(new Set(draft.detected.filter((value): value is string => typeof value === "string")));
+        if (typeof draft.addingTag === "boolean") setAddingTag(draft.addingTag);
+        if (typeof draft.newTag === "string") setNewTag(draft.newTag);
+        if (draft.screenshot && typeof draft.screenshot.path === "string" && typeof draft.screenshot.preview === "string" && typeof draft.screenshot.fileName === "string") {
+          if (initialTrade) setEditedScreenshot(draft.screenshot);
+          else setPendingScreenshot(draft.screenshot);
+        }
+      }
+      setDraftHydrated(true);
+    });
+    return () => window.cancelAnimationFrame(restoreFrame);
+  }, [draftKey, initialTrade, setPendingScreenshot]);
+
+  useEffect(() => {
+    if (!draftHydrated) return;
+    const draft: StoredDraft = {
+      version: 1,
+      form,
+      selected,
+      detected: [...detected],
+      screenshot,
+      addingTag,
+      newTag,
+    };
+    window.localStorage.setItem(draftKey, JSON.stringify(draft));
+  }, [addingTag, detected, draftHydrated, draftKey, form, newTag, screenshot, selected]);
 
   const noTrade = form.result_type === "no_trade";
   const plannedRr = useMemo(() => {
@@ -177,8 +231,12 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
     try {
       const response = await fetch(initialTrade ? `/api/trades/${initialTrade.id}` : "/api/trades", { method: initialTrade ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const data = await response.json(); if (!response.ok) throw new Error(data.error);
+      window.localStorage.removeItem(draftKey);
       if (initialTrade) { router.push(`/trades/${initialTrade.id}`); router.refresh(); return; }
+      setDraftHydrated(false);
       setForm(emptyForm()); setSelected([]); setDetected(new Set()); clearPendingScreenshot();
+      setAddingTag(false); setNewTag("");
+      window.setTimeout(() => setDraftHydrated(true), 0);
       setMessage({ type: "ok", text: "Eintrag gespeichert. Das Formular ist bereit für den nächsten Backtest." });
     } catch (error) { setMessage({ type: "error", text: error instanceof Error ? error.message : "Trade konnte nicht gespeichert werden." }); }
     finally { setSaving(false); }
