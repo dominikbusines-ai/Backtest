@@ -34,6 +34,7 @@ type StoredDraft = {
   form: FormState;
   selected: string[];
   detected: string[];
+  touched?: string[];
   screenshot: PendingScreenshot;
   addingTag: boolean;
   newTag: string;
@@ -58,6 +59,9 @@ const formFromTrade = (trade: Trade): FormState => ({
 
 const num = (value: string) => value.trim() === "" ? null : Number(value);
 const displayNum = (value: number | null) => value === null ? "" : String(value);
+const formKeys = new Set(Object.keys(emptyForm()) as (keyof FormState)[]);
+const isFormKey = (value: unknown): value is keyof FormState => typeof value === "string" && formKeys.has(value as keyof FormState);
+const enteredFormKeys = (state: FormState) => new Set((Object.keys(state) as (keyof FormState)[]).filter((key) => state[key] !== "" && state[key] !== null));
 
 async function optimizeImage(file: File): Promise<File> {
   if (file.size <= 4 * 1024 * 1024) return file;
@@ -77,7 +81,8 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const { screenshot: pendingScreenshot, setScreenshot: setPendingScreenshot, clearScreenshot: clearPendingScreenshot } = usePendingScreenshot();
   const draftKey = `${DRAFT_STORAGE_PREFIX}:${initialTrade ? `edit:${initialTrade.id}` : "new"}`;
-  const [form, setForm] = useState<FormState>(() => initialTrade ? formFromTrade(initialTrade) : emptyForm());
+  const initialForm = useMemo(() => initialTrade ? formFromTrade(initialTrade) : emptyForm(), [initialTrade]);
+  const [form, setForm] = useState<FormState>(initialForm);
   const [tags, setTags] = useState<Tag[]>(LOCAL_TAGS);
   const [selected, setSelected] = useState<string[]>(initialTrade?.tags.map((tag) => tag.id) ?? []);
   const [detected, setDetected] = useState<Set<string>>(new Set());
@@ -93,6 +98,8 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
   const [addingTag, setAddingTag] = useState(false);
   const [newTag, setNewTag] = useState("");
   const [draftHydrated, setDraftHydrated] = useState(false);
+  const [touchedFields, setTouchedFields] = useState<Set<keyof FormState>>(() => initialTrade ? enteredFormKeys(initialForm) : new Set());
+  const touchedFieldsRef = useRef(touchedFields);
   const screenshot = initialTrade ? editedScreenshot : pendingScreenshot;
   const { path: screenshotPath, preview, fileName } = screenshot;
 
@@ -123,7 +130,13 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
     }
     const restoreFrame = window.requestAnimationFrame(() => {
       if (draft?.version === 1 && draft.form) {
-        setForm((current) => ({ ...current, ...draft.form }));
+        const restoredForm = { ...initialForm, ...draft.form };
+        const restoredTouched = Array.isArray(draft.touched)
+          ? new Set(draft.touched.filter(isFormKey))
+          : enteredFormKeys(restoredForm);
+        setForm(restoredForm);
+        touchedFieldsRef.current = restoredTouched;
+        setTouchedFields(restoredTouched);
         if (Array.isArray(draft.selected)) setSelected(draft.selected.filter((value): value is string => typeof value === "string"));
         if (Array.isArray(draft.detected)) setDetected(new Set(draft.detected.filter((value): value is string => typeof value === "string")));
         if (typeof draft.addingTag === "boolean") setAddingTag(draft.addingTag);
@@ -136,7 +149,7 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
       setDraftHydrated(true);
     });
     return () => window.cancelAnimationFrame(restoreFrame);
-  }, [draftKey, initialTrade, setPendingScreenshot]);
+  }, [draftKey, initialForm, initialTrade, setPendingScreenshot]);
 
   useEffect(() => {
     if (!draftHydrated) return;
@@ -145,12 +158,13 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
       form,
       selected,
       detected: [...detected],
+      touched: [...touchedFields],
       screenshot,
       addingTag,
       newTag,
     };
     window.localStorage.setItem(draftKey, JSON.stringify(draft));
-  }, [addingTag, detected, draftHydrated, draftKey, form, newTag, screenshot, selected]);
+  }, [addingTag, detected, draftHydrated, draftKey, form, newTag, screenshot, selected, touchedFields]);
 
   const noTrade = form.result_type === "no_trade";
   const plannedRr = useMemo(() => {
@@ -160,8 +174,17 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
     return Math.abs((tp - entry) / (entry - stop));
   }, [form.entry, form.stop_loss, form.take_profit, noTrade]);
 
-  function update<K extends keyof FormState>(key: K, value: FormState[K]) { setForm((current) => ({ ...current, [key]: value })); }
+  function markTouched(key: keyof FormState) {
+    const next = new Set(touchedFieldsRef.current).add(key);
+    touchedFieldsRef.current = next;
+    setTouchedFields(next);
+  }
+  function update<K extends keyof FormState>(key: K, value: FormState[K]) {
+    markTouched(key);
+    setForm((current) => ({ ...current, [key]: value }));
+  }
   function updateResultType(result_type: ResultType) {
+    markTouched("result_type");
     setForm((current) => result_type === "no_trade"
       ? { ...current, result_type, direction: null, confidence: null, entry: "", stop_loss: "", take_profit: "", result_r: "" }
       : { ...current, result_type, direction: current.direction ?? "long" });
@@ -191,11 +214,21 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
     const recognized = new Set<string>();
     setForm((current) => {
       const next = { ...current };
-      const assign = <K extends keyof FormState>(key: K, value: FormState[K] | null) => { if (value !== null && value !== "") { next[key] = value as FormState[K]; recognized.add(key); } };
+      const protectedFields = touchedFieldsRef.current;
+      const tradeDetailKeys: (keyof FormState)[] = ["direction", "confidence", "entry", "stop_loss", "take_profit", "result_r"];
+      const canApplyNoTrade = data.resultType === "no_trade"
+        && !protectedFields.has("result_type")
+        && !tradeDetailKeys.some((key) => protectedFields.has(key));
+      const assign = <K extends keyof FormState>(key: K, value: FormState[K] | null, allowed = true) => {
+        if (allowed && !protectedFields.has(key) && value !== null && value !== "") {
+          next[key] = value as FormState[K];
+          recognized.add(key);
+        }
+      };
       assign("instrument", data.instrument); assign("trade_date", data.date); assign("trade_time", data.time); assign("timeframe", data.timeframe);
       assign("direction", data.direction); assign("entry", data.entry === null ? null : String(data.entry)); assign("stop_loss", data.stopLoss === null ? null : String(data.stopLoss));
-      assign("take_profit", data.takeProfit === null ? null : String(data.takeProfit)); assign("result_type", data.resultType); assign("result_r", data.resultR === null ? null : String(data.resultR));
-      if (data.resultType === "no_trade") {
+      assign("take_profit", data.takeProfit === null ? null : String(data.takeProfit)); assign("result_type", data.resultType, data.resultType !== "no_trade" || canApplyNoTrade); assign("result_r", data.resultR === null ? null : String(data.resultR));
+      if (canApplyNoTrade) {
         next.direction = null; next.confidence = null; next.entry = ""; next.stop_loss = ""; next.take_profit = ""; next.result_r = "";
       }
       return next;
@@ -235,6 +268,7 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
       if (initialTrade) { router.push(`/trades/${initialTrade.id}`); router.refresh(); return; }
       setDraftHydrated(false);
       setForm(emptyForm()); setSelected([]); setDetected(new Set()); clearPendingScreenshot();
+      touchedFieldsRef.current = new Set(); setTouchedFields(new Set());
       setAddingTag(false); setNewTag("");
       window.setTimeout(() => setDraftHydrated(true), 0);
       setMessage({ type: "ok", text: "Eintrag gespeichert. Das Formular ist bereit für den nächsten Backtest." });
