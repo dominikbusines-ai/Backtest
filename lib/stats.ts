@@ -1,11 +1,19 @@
 import type { Stats, Trade } from "@/lib/types";
 
+function resultTypeForStats(trade: Trade) {
+  if (trade.result_type === "no_trade") return "no_trade" as const;
+  if (trade.result_r === null) return trade.result_type;
+  if (trade.result_r > 0) return "win" as const;
+  if (trade.result_r < 0) return "loss" as const;
+  return "breakeven" as const;
+}
+
 export function calculateStats(trades: Trade[]): Stats {
   const actualTrades = trades.filter((trade) => trade.result_type !== "no_trade");
   const noTrades = trades.filter((trade) => trade.result_type === "no_trade");
-  const wins = actualTrades.filter((trade) => trade.result_type === "win");
-  const losses = actualTrades.filter((trade) => trade.result_type === "loss");
-  const breakeven = actualTrades.filter((trade) => trade.result_type === "breakeven");
+  const wins = actualTrades.filter((trade) => resultTypeForStats(trade) === "win");
+  const losses = actualTrades.filter((trade) => resultTypeForStats(trade) === "loss");
+  const breakeven = actualTrades.filter((trade) => resultTypeForStats(trade) === "breakeven");
   const measured = actualTrades.filter((trade) => trade.result_r !== null);
   const resultValues = measured.map((trade) => trade.result_r as number);
   const winnerValues = wins.map((trade) => trade.result_r).filter((value): value is number => value !== null);

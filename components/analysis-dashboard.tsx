@@ -32,13 +32,20 @@ export function AnalysisDashboard() {
   const statsB = useMemo(() => calculateStats(modeTrades.filter((trade) => hasEveryTag(trade, groupB))), [modeTrades, groupB]);
   const reviewedTrades = useMemo(() => filtered.filter((trade) => trade.review_observation || trade.review_mistake || trade.review_invalidation || trade.review_illogical), [filtered]);
 
+  function changeTradeMode(value: TradeMode) {
+    setTradeMode(value);
+    setSelected([]);
+    setGroupA([]);
+    setGroupB([]);
+  }
+
   if (loading) return <div className="panel flex min-h-72 items-center justify-center text-sm text-zinc-500"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Analyse wird berechnet</div>;
   if (error) return <div className="panel p-5 sm:p-8"><p className="text-sm font-semibold">Supabase-Verbindung erforderlich</p><p className="mt-2 text-sm text-zinc-500">{error}</p></div>;
 
   return <div className="space-y-8">
-    <section className="panel p-2"><div className="grid grid-cols-2 gap-2">{(["backtest", "live"] as const).map((value) => { const count = trades.filter((trade) => trade.trade_mode === value).length; return <button key={value} type="button" onClick={() => setTradeMode(value)} className={`rounded-xl px-4 py-3 text-left transition ${tradeMode === value ? "bg-lime/10 text-lime ring-1 ring-lime/30" : "text-zinc-500 hover:bg-white/[0.02] hover:text-zinc-300"}`}><span className="block text-sm font-bold">{value === "backtest" ? "Backtests" : "Live Trades"}</span><span className="mt-1 block text-[10px] font-normal text-zinc-600">{count} {count === 1 ? "Eintrag" : "Einträge"}</span></button>; })}</div></section>
+    <section className="panel p-2"><div className="grid grid-cols-2 gap-2">{(["backtest", "live"] as const).map((value) => { const count = trades.filter((trade) => trade.trade_mode === value).length; return <button key={value} type="button" onClick={() => changeTradeMode(value)} className={`rounded-xl px-4 py-3 text-left transition ${tradeMode === value ? "bg-lime/10 text-lime ring-1 ring-lime/30" : "text-zinc-500 hover:bg-white/[0.02] hover:text-zinc-300"}`}><span className="block text-sm font-bold">{value === "backtest" ? "Backtests" : "Live Trades"}</span><span className="mt-1 block text-[10px] font-normal text-zinc-600">{count} {count === 1 ? "Eintrag" : "Einträge"}</span></button>; })}</div></section>
 
-    <section><div className="mb-4 flex flex-col items-start gap-2 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm font-semibold">{selected.length ? "Gefilterte Kennzahlen" : tradeMode === "live" ? "Live-Trade-Übersicht" : "Backtest-Übersicht"}</p><p className="mt-1 text-xs text-zinc-600">„Kein Trade“ wird separat gezählt und fließt nicht in Winrate oder R-Kennzahlen ein.</p></div><p className="text-xs text-zinc-600">{filtered.length} von {modeTrades.length} Einträgen</p></div><div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-6">
+    <section><div className="mb-4 flex flex-col items-start gap-2 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm font-semibold">{selected.length ? "Gefilterte Kennzahlen" : tradeMode === "live" ? "Live-Trade-Übersicht" : "Backtest-Übersicht"}</p><p className="mt-1 text-xs text-zinc-600">Wins und Losses folgen dem tatsächlichen R-Ergebnis. „Kein Trade“ wird separat gezählt.</p></div><p className="text-xs text-zinc-600">{filtered.length} von {modeTrades.length} Einträgen</p></div><div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-6">
       <MetricCard label="Trades" value={String(stats.trades)} /><MetricCard label="Kein Trade" value={String(stats.noTrades)} /><MetricCard label="Wins" value={String(stats.wins)} tone="positive" /><MetricCard label="Losses" value={String(stats.losses)} tone="negative" /><MetricCard label="Break-even" value={String(stats.breakeven)} /><MetricCard label="Winrate" value={format(stats.winrate, "%")} /><MetricCard label="Ø R" value={format(stats.avgR, "R")} tone={stats.avgR > 0 ? "positive" : stats.avgR < 0 ? "negative" : "default"} />
       <MetricCard label="Gesamtes R" value={format(stats.totalR, "R")} tone={stats.totalR > 0 ? "positive" : stats.totalR < 0 ? "negative" : "default"} /><MetricCard label="Ø Gewinner" value={format(stats.avgWinner, "R")} /><MetricCard label="Ø Verlierer" value={format(stats.avgLoser, "R")} /><MetricCard label="Ø geplantes R:R" value={format(stats.avgPlannedRr)} /><MetricCard label="Profit Factor" value={pf(stats.profitFactor)} /><MetricCard label="Expectancy" value={format(stats.expectancy, "R")} />
     </div></section>
