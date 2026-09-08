@@ -34,6 +34,7 @@ export type Trade = {
   confidence: number | null;
   context: string | null;
   entry_note: string | null;
+  pre_trade_assessment: string | null;
   review_observation: string | null;
   review_mistake: string | null;
   review_invalidation: string | null;

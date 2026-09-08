@@ -25,7 +25,7 @@ const today = () => new Date().toISOString().slice(0, 10);
 type FormState = {
   trade_date: string; trade_time: string; trade_mode: TradeMode; instrument: string; timeframe: string; direction: Direction | null;
   entry: string; stop_loss: string; take_profit: string; result_r: string; result_type: ResultType;
-  confidence: number | null; context: string; entry_note: string; review_observation: string;
+  confidence: number | null; context: string; entry_note: string; pre_trade_assessment: string; review_observation: string;
   review_mistake: string; review_invalidation: string; review_illogical: string; mfe: string; mae: string;
 };
 
@@ -44,7 +44,7 @@ const DRAFT_STORAGE_PREFIX = "edgelog:trade-draft:v1";
 
 const emptyForm = (): FormState => ({
   trade_date: today(), trade_time: "", trade_mode: "backtest", instrument: "", timeframe: "", direction: "long", entry: "", stop_loss: "",
-  take_profit: "", result_r: "", result_type: "win", confidence: null, context: "", entry_note: "", review_observation: "",
+  take_profit: "", result_r: "", result_type: "win", confidence: null, context: "", entry_note: "", pre_trade_assessment: "", review_observation: "",
   review_mistake: "", review_invalidation: "", review_illogical: "", mfe: "", mae: "",
 });
 
@@ -53,6 +53,7 @@ const formFromTrade = (trade: Trade): FormState => ({
   timeframe: trade.timeframe ?? "", direction: trade.direction, entry: displayNum(trade.entry), stop_loss: displayNum(trade.stop_loss),
   take_profit: displayNum(trade.take_profit), result_r: displayNum(trade.result_r), result_type: trade.result_type, confidence: trade.confidence,
   context: trade.context ?? "", entry_note: trade.entry_note ?? "", review_observation: trade.review_observation ?? "",
+  pre_trade_assessment: trade.pre_trade_assessment ?? "",
   review_mistake: trade.review_mistake ?? "", review_invalidation: trade.review_invalidation ?? "", review_illogical: trade.review_illogical ?? "",
   mfe: displayNum(trade.mfe), mae: displayNum(trade.mae),
 });
@@ -257,6 +258,7 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
       take_profit: noTrade ? null : num(form.take_profit), planned_rr: noTrade ? null : plannedRr,
       result_r: noTrade ? null : num(form.result_r), result_type: form.result_type, confidence: noTrade ? null : form.confidence, context: form.context.trim() || null,
       entry_note: form.entry_note.trim() || null, review_observation: form.review_observation.trim() || null,
+      pre_trade_assessment: form.pre_trade_assessment.trim() || null,
       review_mistake: noTrade ? null : form.review_mistake.trim() || null, review_invalidation: noTrade ? null : form.review_invalidation.trim() || null,
       review_illogical: noTrade ? form.review_illogical.trim() || null : null,
       screenshot_url: screenshotPath || null, mfe: num(form.mfe), mae: num(form.mae), tag_ids: selected,
@@ -281,6 +283,14 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_370px]">
       <div className="space-y-6">
+        <section className="panel p-4 sm:p-5 lg:p-6">
+          <h2 className="text-sm font-semibold">Pre-Trade-Bewertung <span className="font-normal text-zinc-600">· optional</span></h2>
+          <p className="mt-1 text-xs text-zinc-500">Vor dem Entry festhalten: Welche Bestätigungen benötigen Sie für Ihre Trendannahme?</p>
+          <label className="mt-4 block">
+            <span className="label">Was brauche ich, damit ich vom Trend überzeugt bin?</span>
+            <textarea className="field min-h-40 resize-y py-3" maxLength={5000} value={form.pre_trade_assessment} onChange={(event) => update("pre_trade_assessment", event.target.value)} placeholder="Welche Marktstruktur, welches Preisverhalten oder welche Bestätigungen möchte ich zuerst sehen? Was würde gegen meine Trendannahme sprechen?" />
+          </label>
+        </section>
         <div onDragEnter={(e) => { e.preventDefault(); setDragging(true); }} onDragOver={(e) => e.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={(e) => { e.preventDefault(); setDragging(false); void handleFile(e.dataTransfer.files[0]); }} className={`panel relative min-h-52 overflow-hidden border-dashed transition ${isDragging ? "border-lime bg-lime/[0.04]" : "hover:border-lime/40"}`}>
           {preview && <img src={preview} alt="Ausgewählter Chart-Screenshot" className="absolute inset-0 h-full w-full object-cover opacity-25" />}
           {(preview || screenshotPath) && <button type="button" onClick={removeScreenshot} disabled={analyzing} className="absolute right-3 top-3 z-20 inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-rose-500/30 bg-ink/90 px-3 py-2 text-xs font-semibold text-rose-400 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50" aria-label="Screenshot entfernen"><X className="h-3.5 w-3.5" /> Entfernen</button>}

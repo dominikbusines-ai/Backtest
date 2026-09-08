@@ -18,6 +18,7 @@ export const tradeInputSchema = z.object({
   confidence: z.number().int().min(1).max(5).nullable(),
   context: z.string().max(5000).nullable(),
   entry_note: z.string().max(2000).nullable(),
+  pre_trade_assessment: z.string().max(5000).nullable(),
   review_observation: z.string().max(5000).nullable(),
   review_mistake: z.string().max(5000).nullable(),
   review_invalidation: z.string().max(5000).nullable(),

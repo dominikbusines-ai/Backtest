@@ -6,6 +6,7 @@ Minimalistische Next.js-Web-App zur schnellen Erfassung und statistischen Auswer
 
 - Schnelle Trade-Erfassung mit Drag-and-Drop-Screenshot
 - Kennzeichnung jedes Eintrags als Backtest oder echter Live Trade
+- Optionale Pre-Trade-Bewertung: eigene Bedingungen für die Trendüberzeugung, mit Entwurfssicherung und Anzeige in den Trade-Details
 - Strukturierte KI-Extraktion ohne Bewertung des Trades
 - Eigener „Kein Trade“-Modus für bewusst ausgelassene Entries und unlogische Setups
 - Automatische Berechnung des geplanten Risk-to-Reward
@@ -41,6 +42,8 @@ Copy-Item .env.example .env.local
 Anschließend die Werte in `.env.local` eintragen.
 
 ## 2. Supabase vorbereiten
+
+Bei bestehenden Installationen vor dem Deployment der Pre-Trade-Bewertung die Datei `supabase/migrations/005_pre_trade_assessment.sql` im Supabase SQL Editor ausführen. Sie ergänzt ein optionales Textfeld; bestehende Trades bleiben erhalten.
 
 1. Ein neues Supabase-Projekt erstellen.
 2. Im Supabase SQL Editor die Dateien aus `supabase/migrations/` in numerischer Reihenfolge vollständig ausführen.
