@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Loader2, NotebookPen, Pencil, Trash2 } from "lucide-react";
+import { ChevronDown, Loader2, NotebookPen, Pencil, Trash2 } from "lucide-react";
 import { z } from "zod";
 import type { JournalNote } from "@/lib/note-schema";
 import { NoteSummary } from "@/components/note-summary";
@@ -157,16 +157,25 @@ export function NotesBoard() {
         {loading && <p role="status" className="flex items-center gap-2 py-6 text-sm text-zinc-500"><Loader2 className="h-4 w-4 animate-spin" /> Notizen werden geladen…</p>}
         {loadError && <div role="alert" className="panel p-4 text-sm leading-6 text-amber-400"><p>{loadError}</p><button type="button" onClick={() => window.location.reload()} className="mt-2 min-h-11 text-xs underline">Erneut laden</button></div>}
         {!loading && !loadError && notes.length === 0 && <div className="panel px-5 py-10 text-center"><NotebookPen className="mx-auto mb-3 h-6 w-6 text-zinc-600" /><p className="text-sm text-zinc-400">Noch keine Notizen.</p><p className="mt-1 text-xs text-zinc-500">Halten Sie oben Ihren ersten Gedanken fest.</p></div>}
-        {notes.map((note) => <article key={note.id} className={`panel p-4 sm:p-5 ${draft?.id === note.id ? "border-lime/40" : ""}`}>
-          <p className="text-xs text-zinc-500"><time dateTime={note.created_at}>{dateLabel(note.created_at)}</time>{note.updated_at !== note.created_at ? " · bearbeitet" : ""}</p>
-          {note.title && <h3 className="mt-3 whitespace-pre-wrap break-words text-base font-semibold">{note.title}</h3>}
+        {notes.map((note) => <details key={note.id} className={`panel group ${draft?.id === note.id ? "border-lime/40" : ""}`}>
+          <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-2xl p-3 focus-visible:outline-2 focus-visible:outline-lime sm:px-4 [&::-webkit-details-marker]:hidden">
+            <div className="min-w-0 flex-1">
+              <h3 className="truncate text-sm font-semibold">{note.title || "Ohne Titel"}</h3>
+              <p className="mt-1 truncate text-xs text-zinc-500">{note.content}</p>
+              <p className="mt-1 text-[11px] text-zinc-600"><time dateTime={note.created_at}>{dateLabel(note.created_at)}</time>{note.updated_at !== note.created_at ? " · bearbeitet" : ""}</p>
+            </div>
+            <ChevronDown className="h-4 w-4 shrink-0 text-zinc-500 transition group-open:rotate-180" aria-hidden="true" />
+          </summary>
+          <div className="border-t border-line px-4 pb-4 sm:px-5">
+          {note.title && <p className="mt-3 whitespace-pre-wrap break-words text-base font-semibold">{note.title}</p>}
           <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-7 text-zinc-300">{note.content}</p>
           <NoteSummary key={`${note.id}:${note.updated_at}`} id={note.id} updatedAt={note.updated_at} disabled={busy} />
           <div className="mt-4 flex flex-wrap gap-4 border-t border-line pt-2">
             <button type="button" disabled={busy || !draft} onClick={() => edit(note)} className="inline-flex min-h-11 items-center gap-2 text-xs font-medium text-zinc-400 hover:text-lime disabled:opacity-50"><Pencil className="h-3.5 w-3.5" /> Bearbeiten</button>
             <button type="button" disabled={busy} onClick={() => void remove(note)} className="inline-flex min-h-11 items-center gap-2 text-xs text-zinc-500 hover:text-rose-400 disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" /> Löschen</button>
           </div>
-        </article>)}
+          </div>
+        </details>)}
       </section>
     </div>
   );

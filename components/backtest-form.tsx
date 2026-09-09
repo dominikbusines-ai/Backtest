@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Check, ImagePlus, Loader2, Plus, Sparkles, X } from "lucide-react";
 import { usePendingScreenshot, type PendingScreenshot } from "@/components/pending-screenshot-provider";
+import { TradeImageViewer } from "@/components/trade-image-viewer";
 import type { AnalysisResult, Direction, ResultType, Tag, Trade, TradeInput, TradeMode } from "@/lib/types";
 
 const LOCAL_TAGS: Tag[] = [
@@ -43,7 +44,7 @@ type StoredDraft = {
 const DRAFT_STORAGE_PREFIX = "edgelog:trade-draft:v1";
 
 const emptyForm = (): FormState => ({
-  trade_date: today(), trade_time: "", trade_mode: "backtest", instrument: "", timeframe: "", direction: "long", entry: "", stop_loss: "",
+  trade_date: today(), trade_time: "", trade_mode: "backtest", instrument: "", timeframe: "1m", direction: "long", entry: "", stop_loss: "",
   take_profit: "", result_r: "", result_type: "win", confidence: null, context: "", entry_note: "", pre_trade_assessment: "", review_observation: "",
   review_mistake: "", review_invalidation: "", review_illogical: "", mfe: "", mae: "",
 });
@@ -132,6 +133,7 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
     const restoreFrame = window.requestAnimationFrame(() => {
       if (draft?.version === 1 && draft.form) {
         const restoredForm = { ...initialForm, ...draft.form };
+        if (!initialTrade) restoredForm.timeframe = "1m";
         const restoredTouched = Array.isArray(draft.touched)
           ? new Set(draft.touched.filter(isFormKey))
           : enteredFormKeys(restoredForm);
@@ -226,7 +228,7 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
           recognized.add(key);
         }
       };
-      assign("instrument", data.instrument); assign("trade_date", data.date); assign("trade_time", data.time); assign("timeframe", data.timeframe);
+      assign("instrument", data.instrument); assign("trade_date", data.date); assign("trade_time", data.time);
       assign("direction", data.direction); assign("entry", data.entry === null ? null : String(data.entry)); assign("stop_loss", data.stopLoss === null ? null : String(data.stopLoss));
       assign("take_profit", data.takeProfit === null ? null : String(data.takeProfit)); assign("result_type", data.resultType, data.resultType !== "no_trade" || canApplyNoTrade); assign("result_r", data.resultR === null ? null : String(data.resultR));
       if (canApplyNoTrade) {
@@ -253,7 +255,7 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
     if (!form.trade_date || !form.instrument.trim()) { setMessage({ type: "error", text: "Datum und Instrument sind erforderlich." }); return; }
     setSaving(true); setMessage(null);
     const body: TradeInput = {
-      trade_date: form.trade_date, trade_time: form.trade_time || null, trade_mode: form.trade_mode, instrument: form.instrument.trim().toUpperCase(), timeframe: form.timeframe.trim() || null,
+      trade_date: form.trade_date, trade_time: form.trade_time || null, trade_mode: form.trade_mode, instrument: form.instrument.trim().toUpperCase(), timeframe: initialTrade ? form.timeframe.trim() || null : "1m",
       direction: noTrade ? null : form.direction, entry: noTrade ? null : num(form.entry), stop_loss: noTrade ? null : num(form.stop_loss),
       take_profit: noTrade ? null : num(form.take_profit), planned_rr: noTrade ? null : plannedRr,
       result_r: noTrade ? null : num(form.result_r), result_type: form.result_type, confidence: noTrade ? null : form.confidence, context: form.context.trim() || null,
@@ -293,8 +295,9 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
         </section>
         <div onDragEnter={(e) => { e.preventDefault(); setDragging(true); }} onDragOver={(e) => e.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={(e) => { e.preventDefault(); setDragging(false); void handleFile(e.dataTransfer.files[0]); }} className={`panel relative min-h-52 overflow-hidden border-dashed transition ${isDragging ? "border-lime bg-lime/[0.04]" : "hover:border-lime/40"}`}>
           {preview && <img src={preview} alt="Ausgewählter Chart-Screenshot" className="absolute inset-0 h-full w-full object-cover opacity-25" />}
+          {preview && <div className="absolute left-3 top-3 z-20"><TradeImageViewer src={preview} alt="Ausgewählter Chart-Screenshot" compact /></div>}
           {(preview || screenshotPath) && <button type="button" onClick={removeScreenshot} disabled={analyzing} className="absolute right-3 top-3 z-20 inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-rose-500/30 bg-ink/90 px-3 py-2 text-xs font-semibold text-rose-400 transition hover:bg-rose-500/10 disabled:cursor-not-allowed disabled:opacity-50" aria-label="Screenshot entfernen"><X className="h-3.5 w-3.5" /> Entfernen</button>}
-          <button type="button" onClick={() => inputRef.current?.click()} disabled={analyzing} className="relative z-10 flex min-h-52 w-full flex-col items-center justify-center p-5 text-center sm:p-8">
+          <button type="button" onClick={() => inputRef.current?.click()} disabled={analyzing} className={`relative z-10 flex min-h-52 w-full flex-col items-center justify-center p-5 text-center sm:p-8 ${(preview || screenshotPath) ? "pt-20 sm:pt-20" : ""}`}>
             <span className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl border border-line bg-ink/90 text-zinc-400">{analyzing ? <Loader2 className="h-5 w-5 animate-spin text-lime" /> : <ImagePlus className="h-5 w-5" />}</span>
             <span className="text-base font-semibold">{analyzing ? "Screenshot wird analysiert…" : fileName || (initialTrade ? "Screenshot ersetzen" : "Chart Screenshot hochladen")}</span>
             <span className="mt-2 text-xs text-zinc-500">PNG, JPG oder WebP ablegen · große Bilder werden optimiert</span>
@@ -310,7 +313,7 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
             <label><span className="label">Datum{marker("trade_date")}</span><input className="field" type="date" value={form.trade_date} onChange={(e) => update("trade_date", e.target.value)} /></label>
             <label><span className="label">Uhrzeit{marker("trade_time")}</span><input className="field" type="time" value={form.trade_time} onChange={(e) => update("trade_time", e.target.value)} /></label>
             <label><span className="label">Instrument{marker("instrument")}</span><input className="field" placeholder="MNQ" value={form.instrument} onChange={(e) => update("instrument", e.target.value)} /></label>
-            <label><span className="label">Timeframe{marker("timeframe")}</span><input className="field" placeholder="1m" value={form.timeframe} onChange={(e) => update("timeframe", e.target.value)} /></label>
+            <label><span className="label">Timeframe</span><input className={`field ${initialTrade ? "" : "text-zinc-500"}`} readOnly={!initialTrade} value={form.timeframe} onChange={(e) => update("timeframe", e.target.value)} /></label>
             <div className={`sm:col-span-2 ${noTrade ? "opacity-40" : ""}`}><span className="label">Richtung{marker("direction")}</span><div className="grid grid-cols-2 gap-2 rounded-lg bg-ink p-1">{(["long", "short"] as const).map((value) => <button key={value} type="button" disabled={noTrade} onClick={() => update("direction", value)} className={`h-11 rounded-md text-xs font-bold uppercase transition disabled:cursor-not-allowed ${form.direction === value ? value === "long" ? "bg-emerald-500/15 text-emerald-400" : "bg-rose-500/15 text-rose-400" : "text-zinc-600"}`}>{value}</button>)}</div></div>
             <label className={noTrade ? "opacity-40" : ""}><span className="label">Confidence</span><div className="flex h-11 gap-1">{[1,2,3,4,5].map((value) => <button key={value} type="button" disabled={noTrade} onClick={() => update("confidence", value)} className={`flex-1 rounded-md border text-xs font-semibold disabled:cursor-not-allowed ${form.confidence === value ? "border-lime/50 bg-lime/10 text-lime" : "border-line text-zinc-500"}`}>{value}</button>)}</div></label>
             <label><span className="label">Ergebnis{marker("result_type")}</span><select className="field" value={form.result_type} onChange={(e) => updateResultType(e.target.value as ResultType)}><option value="win">Gewinn</option><option value="loss">Verlust</option><option value="breakeven">Break-even</option><option value="no_trade">Kein Trade</option></select></label>
