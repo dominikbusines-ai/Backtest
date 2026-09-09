@@ -1,4 +1,5 @@
 import { requireSupabase, signScreenshot } from "@/lib/supabase-server";
+import { assertInstrument } from "@/lib/instruments";
 import type { Tag, Trade, TradeInput } from "@/lib/types";
 
 type TradeRow = Omit<Trade, "tags" | "screenshot_signed_url">;
@@ -40,6 +41,7 @@ export async function getTrade(id: string): Promise<Trade | null> {
 }
 
 export async function createTrade(input: TradeInput): Promise<string> {
+  assertInstrument(input);
   const supabase = requireSupabase();
   const { tag_ids, ...trade } = input;
   // The creation timestamp is deliberately assigned only on insert. Updates
@@ -61,6 +63,9 @@ export async function createTrade(input: TradeInput): Promise<string> {
 
 export async function updateTrade(id: string, input: TradeInput) {
   const supabase = requireSupabase();
+  const { data: existing, error: readError } = await supabase.from("trades").select("trade_mode,instrument").eq("id", id).single();
+  if (readError) throw readError;
+  assertInstrument(input, existing as Pick<Trade, "trade_mode" | "instrument">);
   const { tag_ids, ...trade } = input;
   const { error } = await supabase.from("trades").update(trade).eq("id", id);
   if (error) throw error;

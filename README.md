@@ -4,6 +4,9 @@ Minimalistische Next.js-Web-App zur schnellen Erfassung und statistischen Auswer
 
 ## Funktionen
 
+- Instrumentauswahl: Backtests ausschließlich `MNQ SEP26` / `MES SEP26`; neue Live-Einträge bis 13.09.2026 `MNQU26` / `MESU26`, ab 14.09.2026, 00:00 Europe/Berlin, automatisch `MNQZ26` / `MESZ26`. Grundlage: [CME Roll Dates](https://www.cmegroup.com/trading/equity-index/rolldates.html), September-Verfall am 18.09.2026. Dies implementiert diesen einen September-Rollover, keine weiteren Quartale.
+- Die Instrumentliste gilt auch für das KI-Ausgabeschema und die serverseitige Speicherung. Bestehende Trades behalten beim Bearbeiten ihren gespeicherten Kontrakt; neue Auswahlmöglichkeiten folgen der aktuellen Liste. Offene und wiederhergestellte neue Entwürfe werden nach Produkt (MNQ/MES) angepasst. Prüfungen: `node --test tests/instruments.test.mjs`.
+
 - Schlichte Startseite für allgemeine Notizen: optionaler Titel, Bearbeiten/Löschen, lokale Entwurfssicherung und Speicherung in Supabase
 - Leere Notiztitel werden beim Speichern mit Anthropic ergänzt; eigene Titel bleiben erhalten. Bei KI-Fehlern wird die Notiz trotzdem gespeichert, mit einem Hinweis.
 - Jede gespeicherte Notiz lässt sich per Knopfdruck in 1–2 Sätzen zusammenfassen. Kurzfassungen werden pro Notizversion im aktuellen Browser gespeichert; nach Bearbeitung muss die Kurzfassung neu erstellt werden. Keine weitere Datenbankmigration erforderlich.

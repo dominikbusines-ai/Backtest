@@ -2,14 +2,15 @@ import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { jsonSchemaOutputFormat } from "@anthropic-ai/sdk/helpers/json-schema";
 import { requireSupabase } from "@/lib/supabase-server";
+import { instrumentOptions } from "@/lib/instruments";
 
 export const runtime = "nodejs";
 
-const schema = {
+const schema = (instruments: readonly string[]) => ({
   type: "object",
   additionalProperties: false,
   properties: {
-    instrument: { type: ["string", "null"] },
+    instrument: { type: ["string", "null"], enum: [...instruments, null] },
     date: { type: ["string", "null"], description: "YYYY-MM-DD or null" },
     time: { type: ["string", "null"], description: "HH:MM or null" },
     timeframe: { type: ["string", "null"] },
@@ -42,7 +43,7 @@ const schema = {
     },
   },
   required: ["instrument", "date", "time", "timeframe", "direction", "entry", "stopLoss", "takeProfit", "riskReward", "resultType", "resultR", "detectedObservations", "detectedZones", "confidence"],
-} as const;
+} as const);
 
 const supportedImageTypes = ["image/png", "image/jpeg", "image/webp"] as const;
 type SupportedImageType = (typeof supportedImageTypes)[number];
@@ -51,6 +52,9 @@ export async function POST(request: Request) {
   try {
     if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY ist noch nicht konfiguriert.");
     const form = await request.formData();
+    const mode = form.get("trade_mode") ?? "backtest";
+    if (mode !== "backtest" && mode !== "live") return NextResponse.json({ error: "Ungültige Art des Eintrags." }, { status: 400 });
+    const instruments = instrumentOptions(mode);
     const file = form.get("image");
     if (!(file instanceof File)) return NextResponse.json({ error: "Kein Bild übermittelt." }, { status: 400 });
     if (!supportedImageTypes.includes(file.type as SupportedImageType)) return NextResponse.json({ error: "Nur PNG, JPG und WebP werden unterstützt." }, { status: 400 });
@@ -61,7 +65,7 @@ export async function POST(request: Request) {
     const response = await anthropic.messages.parse({
       model: process.env.ANTHROPIC_VISION_MODEL || "claude-haiku-4-5",
       max_tokens: 1200,
-      system: "Du extrahierst ausschließlich objektiv sichtbare Daten aus Trading-Charts. Erfinde nichts und bewerte weder den Trade noch den Entry.",
+      system: `Du extrahierst ausschließlich objektiv sichtbare Daten aus Trading-Charts. Erfinde nichts und bewerte weder den Trade noch den Entry. Für instrument sind ausschließlich ${instruments.join(" oder ")} zulässig. Wenn das Micro-Instrument MNQ bzw. MES sicher erkennbar ist, verwende den entsprechenden Namen aus dieser Liste. Monatsangaben im Screenshot ändern diese vorgegebene Auswahl nicht. Bei anderen Instrumenten, NQ/ES ohne Micro-Kennung oder Unsicherheit setze instrument auf null und confidence.instrument auf 0.`,
       messages: [{
         role: "user",
         content: [
@@ -79,7 +83,7 @@ export async function POST(request: Request) {
           },
         ],
       }],
-      output_config: { format: jsonSchemaOutputFormat(schema) },
+      output_config: { format: jsonSchemaOutputFormat(schema(instruments)) },
     });
     const analysis = response.parsed_output;
     if (!analysis) throw new Error("Anthropic hat keine auswertbare Antwort geliefert.");

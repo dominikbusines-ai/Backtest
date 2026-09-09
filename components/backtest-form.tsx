@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Check, ImagePlus, Loader2, Plus, Sparkles, X } from "lucide-react";
 import { usePendingScreenshot, type PendingScreenshot } from "@/components/pending-screenshot-provider";
 import { TradeImageViewer } from "@/components/trade-image-viewer";
+import { instrumentForMode, instrumentOptions, selectedInstrument, SEPTEMBER_ROLLOVER } from "@/lib/instruments";
 import type { AnalysisResult, Direction, ResultType, Tag, Trade, TradeInput, TradeMode } from "@/lib/types";
 
 const LOCAL_TAGS: Tag[] = [
@@ -84,7 +85,25 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
   const { screenshot: pendingScreenshot, setScreenshot: setPendingScreenshot, clearScreenshot: clearPendingScreenshot } = usePendingScreenshot();
   const draftKey = `${DRAFT_STORAGE_PREFIX}:${initialTrade ? `edit:${initialTrade.id}` : "new"}`;
   const initialForm = useMemo(() => initialTrade ? formFromTrade(initialTrade) : emptyForm(), [initialTrade]);
-  const [form, setForm] = useState<FormState>(initialForm);
+  const [formState, setForm] = useState<FormState>(initialForm);
+  const [contractNow, setContractNow] = useState(() => Date.now());
+  const form = useMemo(() => ({ ...formState, instrument: selectedInstrument(formState, initialTrade, new Date(contractNow)) }), [formState, initialTrade, contractNow]);
+  const instruments = instrumentOptions(form.trade_mode, new Date(contractNow));
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = () => {
+      const now = Date.now();
+      setContractNow(now);
+      clearTimeout(timer);
+      const delay = now < SEPTEMBER_ROLLOVER ? Math.min(60_000, SEPTEMBER_ROLLOVER - now + 1) : 60_000;
+      timer = setTimeout(refresh, delay);
+    };
+    timer = setTimeout(refresh, 0);
+    window.addEventListener("focus", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => { clearTimeout(timer); window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); };
+  }, []);
   const [tags, setTags] = useState<Tag[]>(LOCAL_TAGS);
   const [selected, setSelected] = useState<string[]>(initialTrade?.tags.map((tag) => tag.id) ?? []);
   const [detected, setDetected] = useState<Set<string>>(new Set());
@@ -202,7 +221,7 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
     setAnalyzing(true); setMessage(null); updateScreenshot({ path: "", fileName: file.name, preview: localPreview });
     try {
       const optimized = await optimizeImage(file);
-      const body = new FormData(); body.append("image", optimized);
+      const body = new FormData(); body.append("image", optimized); body.append("trade_mode", form.trade_mode);
       const response = await fetch("/api/analyze", { method: "POST", body });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Analyse fehlgeschlagen.");
@@ -228,7 +247,7 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
           recognized.add(key);
         }
       };
-      assign("instrument", data.instrument); assign("trade_date", data.date); assign("trade_time", data.time);
+      assign("instrument", instrumentForMode(data.instrument, current.trade_mode)); assign("trade_date", data.date); assign("trade_time", data.time);
       assign("direction", data.direction); assign("entry", data.entry === null ? null : String(data.entry)); assign("stop_loss", data.stopLoss === null ? null : String(data.stopLoss));
       assign("take_profit", data.takeProfit === null ? null : String(data.takeProfit)); assign("result_type", data.resultType, data.resultType !== "no_trade" || canApplyNoTrade); assign("result_r", data.resultR === null ? null : String(data.resultR));
       if (canApplyNoTrade) {
@@ -253,9 +272,11 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
 
   async function save() {
     if (!form.trade_date || !form.instrument.trim()) { setMessage({ type: "error", text: "Datum und Instrument sind erforderlich." }); return; }
+    const instrument = selectedInstrument(form, initialTrade);
+    if (!instrument) { setMessage({ type: "error", text: "Bitte ein Instrument aus der Liste auswählen." }); return; }
     setSaving(true); setMessage(null);
     const body: TradeInput = {
-      trade_date: form.trade_date, trade_time: form.trade_time || null, trade_mode: form.trade_mode, instrument: form.instrument.trim().toUpperCase(), timeframe: initialTrade ? form.timeframe.trim() || null : "1m",
+      trade_date: form.trade_date, trade_time: form.trade_time || null, trade_mode: form.trade_mode, instrument, timeframe: initialTrade ? form.timeframe.trim() || null : "1m",
       direction: noTrade ? null : form.direction, entry: noTrade ? null : num(form.entry), stop_loss: noTrade ? null : num(form.stop_loss),
       take_profit: noTrade ? null : num(form.take_profit), planned_rr: noTrade ? null : plannedRr,
       result_r: noTrade ? null : num(form.result_r), result_type: form.result_type, confidence: noTrade ? null : form.confidence, context: form.context.trim() || null,
@@ -312,7 +333,7 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <label><span className="label">Datum{marker("trade_date")}</span><input className="field" type="date" value={form.trade_date} onChange={(e) => update("trade_date", e.target.value)} /></label>
             <label><span className="label">Uhrzeit{marker("trade_time")}</span><input className="field" type="time" value={form.trade_time} onChange={(e) => update("trade_time", e.target.value)} /></label>
-            <label><span className="label">Instrument{marker("instrument")}</span><input className="field" placeholder="MNQ" value={form.instrument} onChange={(e) => update("instrument", e.target.value)} /></label>
+            <label><span className="label">Instrument{marker("instrument")}</span><select className="field" value={form.instrument} onChange={(e) => update("instrument", e.target.value)}><option value="" disabled>Bitte auswählen</option>{form.instrument && !instruments.includes(form.instrument) && <option value={form.instrument} disabled>{form.instrument} · gespeichert</option>}{instruments.map((instrument) => <option key={instrument} value={instrument}>{instrument}</option>)}</select></label>
             <label><span className="label">Timeframe</span><input className={`field ${initialTrade ? "" : "text-zinc-500"}`} readOnly={!initialTrade} value={form.timeframe} onChange={(e) => update("timeframe", e.target.value)} /></label>
             <div className={`sm:col-span-2 ${noTrade ? "opacity-40" : ""}`}><span className="label">Richtung{marker("direction")}</span><div className="grid grid-cols-2 gap-2 rounded-lg bg-ink p-1">{(["long", "short"] as const).map((value) => <button key={value} type="button" disabled={noTrade} onClick={() => update("direction", value)} className={`h-11 rounded-md text-xs font-bold uppercase transition disabled:cursor-not-allowed ${form.direction === value ? value === "long" ? "bg-emerald-500/15 text-emerald-400" : "bg-rose-500/15 text-rose-400" : "text-zinc-600"}`}>{value}</button>)}</div></div>
             <label className={noTrade ? "opacity-40" : ""}><span className="label">Confidence</span><div className="flex h-11 gap-1">{[1,2,3,4,5].map((value) => <button key={value} type="button" disabled={noTrade} onClick={() => update("confidence", value)} className={`flex-1 rounded-md border text-xs font-semibold disabled:cursor-not-allowed ${form.confidence === value ? "border-lime/50 bg-lime/10 text-lime" : "border-line text-zinc-500"}`}>{value}</button>)}</div></label>
