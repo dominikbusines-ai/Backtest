@@ -5,6 +5,8 @@ Minimalistische Next.js-Web-App zur schnellen Erfassung und statistischen Auswer
 ## Funktionen
 
 - Schlichte Startseite für allgemeine Notizen: optionaler Titel, Bearbeiten/Löschen, lokale Entwurfssicherung und Speicherung in Supabase
+- Leere Notiztitel werden beim Speichern mit Anthropic ergänzt; eigene Titel bleiben erhalten. Bei KI-Fehlern wird die Notiz trotzdem gespeichert, mit einem Hinweis.
+- Jede gespeicherte Notiz lässt sich per Knopfdruck in 1–2 Sätzen zusammenfassen. Kurzfassungen werden pro Notizversion im aktuellen Browser gespeichert; nach Bearbeitung muss die Kurzfassung neu erstellt werden. Keine weitere Datenbankmigration erforderlich.
 - Die Trade-Erfassung bleibt unter `/backtest` erreichbar; vorhandene Trade-Entwürfe bleiben erhalten
 - Schnelle Trade-Erfassung mit Drag-and-Drop-Screenshot
 - Kennzeichnung jedes Eintrags als Backtest oder echter Live Trade
@@ -45,7 +47,7 @@ Anschließend die Werte in `.env.local` eintragen.
 
 ## 2. Supabase vorbereiten
 
-Für die neue Startseite einmal `supabase/migrations/007_journal_notes.sql` im Supabase SQL Editor ausführen. Erst danach können Notizen geräteübergreifend gespeichert werden. Ungespeicherte Notizentwürfe bleiben nur im aktuellen Browser erhalten. Allgemeine Notizen werden nicht an die KI gesendet. Es gelten dieselben Zugriffsschutz-Anforderungen wie für Trades (siehe unten).
+Für die neue Startseite einmal `supabase/migrations/007_journal_notes.sql` im Supabase SQL Editor ausführen. Erst danach können Notizen geräteübergreifend gespeichert werden. Ungespeicherte Notizentwürfe bleiben nur im aktuellen Browser erhalten. Bei leerem Titel oder beim Klick auf „Kurz zusammenfassen“ wird nur der Text der betreffenden Notiz an Anthropic gesendet. Es gelten dieselben Zugriffsschutz-Anforderungen wie für Trades (siehe unten).
 
 Bei bestehenden Installationen vor dem Deployment der Pre-Trade-Bewertung die Datei `supabase/migrations/005_pre_trade_assessment.sql` im Supabase SQL Editor ausführen. Sie ergänzt ein optionales Textfeld; bestehende Trades bleiben erhalten.
 

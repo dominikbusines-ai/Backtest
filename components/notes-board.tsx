@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Loader2, NotebookPen, Pencil, Trash2 } from "lucide-react";
 import { z } from "zod";
 import type { JournalNote } from "@/lib/note-schema";
+import { NoteSummary } from "@/components/note-summary";
 
 const storageKey = "edgelog:note-draft:v1";
 const draftSchema = z.object({
@@ -24,6 +25,7 @@ export function NotesBoard() {
   const [loadError, setLoadError] = useState("");
   const [storageError, setStorageError] = useState("");
   const [message, setMessage] = useState("");
+  const [aiWarning, setAiWarning] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
@@ -90,7 +92,7 @@ export function NotesBoard() {
   async function save(event: React.FormEvent) {
     event.preventDefault();
     if (!draft?.content.trim() || busy) return;
-    setBusy(true); setError(""); setMessage("");
+    setBusy(true); setError(""); setMessage(""); setAiWarning("");
     try {
       const response = await fetch("/api/notes", {
         method: draft.updated_at ? "PATCH" : "POST",
@@ -100,7 +102,7 @@ export function NotesBoard() {
       if (!response.ok) throw new Error(data.error || "Die Notiz konnte nicht gespeichert werden.");
       const saved = data.note as JournalNote;
       setNotes((current) => orderNotes([saved, ...current.filter((note) => note.id !== saved.id)]));
-      resetDraft(); setMessage("Notiz gespeichert.");
+      resetDraft(); setMessage("Notiz gespeichert."); setAiWarning(data.warning || "");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Speichern fehlgeschlagen. Ihr Entwurf bleibt erhalten."); }
     finally { setBusy(false); }
   }
@@ -116,6 +118,7 @@ export function NotesBoard() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Die Notiz konnte nicht gelöscht werden.");
       setNotes((current) => current.filter((item) => item.id !== note.id));
+      try { localStorage.removeItem(`edgelog:note-summary:v1:${note.id}`); } catch { /* Deleted notes are no longer rendered. */ }
       if (draft?.id === note.id) resetDraft();
       setMessage("Notiz gelöscht.");
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Löschen fehlgeschlagen."); }
@@ -127,7 +130,7 @@ export function NotesBoard() {
       <form onSubmit={(event) => void save(event)} className="panel space-y-4 p-4 sm:p-6" aria-label="Notiz verfassen">
         <h2 className="text-sm font-semibold">{draft?.updated_at ? "Notiz bearbeiten" : "Gedanken festhalten"}</h2>
         <label className="block"><span className="label">Titel <span className="normal-case tracking-normal">· optional</span></span>
-          <input className="field" maxLength={120} placeholder="Worum geht es?" value={draft?.title ?? ""} disabled={!draft || busy}
+          <input className="field" maxLength={120} placeholder="Leer lassen – die KI findet einen Titel" value={draft?.title ?? ""} disabled={!draft || busy}
             onChange={(event) => { if (draft) { keepDraft({ ...draft, title: event.target.value }); setMessage(""); } }} />
         </label>
         <label className="block"><span className="label">Ihre Notiz</span>
@@ -142,11 +145,13 @@ export function NotesBoard() {
           {draft && (draft.updated_at || draft.title || draft.content) && <button type="button" disabled={busy} onClick={discard} className="min-h-11 px-2 text-xs text-zinc-400 hover:text-white disabled:opacity-50">{draft.updated_at ? "Bearbeitung beenden" : "Entwurf verwerfen"}</button>}
         </div>
         <p className="text-xs leading-5 text-zinc-500">Entwürfe bleiben auf diesem Gerät erhalten. Gespeicherte Notizen sind auch auf Ihren anderen Geräten verfügbar.</p>
+        <p className="text-xs leading-5 text-zinc-500">Ohne Titel erstellt die KI beim Speichern einen passenden Vorschlag. Titel und Kurzfassungen nutzen Ihr Anthropic-Guthaben.</p>
         {storageError && <p role="alert" className="text-xs leading-5 text-amber-400">{storageError}</p>}
       </form>
 
       {error && <p role="alert" className="panel border-rose-500/20 p-4 text-sm text-rose-400">{error}</p>}
       {message && <p role="status" className="text-sm text-lime">{message}</p>}
+      {aiWarning && <p role="status" className="text-sm text-amber-400">{aiWarning}</p>}
       <section aria-labelledby="saved-notes-title" className="space-y-3">
         <div className="flex items-center justify-between gap-3"><h2 id="saved-notes-title" className="text-sm font-semibold">Gespeicherte Notizen</h2><span className="text-xs text-zinc-500">Neueste zuerst</span></div>
         {loading && <p role="status" className="flex items-center gap-2 py-6 text-sm text-zinc-500"><Loader2 className="h-4 w-4 animate-spin" /> Notizen werden geladen…</p>}
@@ -156,6 +161,7 @@ export function NotesBoard() {
           <p className="text-xs text-zinc-500"><time dateTime={note.created_at}>{dateLabel(note.created_at)}</time>{note.updated_at !== note.created_at ? " · bearbeitet" : ""}</p>
           {note.title && <h3 className="mt-3 whitespace-pre-wrap break-words text-base font-semibold">{note.title}</h3>}
           <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-7 text-zinc-300">{note.content}</p>
+          <NoteSummary key={`${note.id}:${note.updated_at}`} id={note.id} updatedAt={note.updated_at} disabled={busy} />
           <div className="mt-4 flex flex-wrap gap-4 border-t border-line pt-2">
             <button type="button" disabled={busy || !draft} onClick={() => edit(note)} className="inline-flex min-h-11 items-center gap-2 text-xs font-medium text-zinc-400 hover:text-lime disabled:opacity-50"><Pencil className="h-3.5 w-3.5" /> Bearbeiten</button>
             <button type="button" disabled={busy} onClick={() => void remove(note)} className="inline-flex min-h-11 items-center gap-2 text-xs text-zinc-500 hover:text-rose-400 disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" /> Löschen</button>
