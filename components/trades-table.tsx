@@ -4,8 +4,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Filter, Image as ImageIcon, Loader2, Pencil, Search, Trash2, X } from "lucide-react";
-import type { Direction, ResultType, Tag, Trade, TradeMode } from "@/lib/types";
-import { hasEveryTag } from "@/lib/stats";
+import type { Direction, ResultType, Trade, TradeMode } from "@/lib/types";
 
 const formatDate = (date: string) => new Intl.DateTimeFormat("de-DE").format(new Date(`${date}T12:00:00`));
 const resultText = (trade: Trade) => trade.result_type === "no_trade" ? "Kein Trade" : trade.result_r === null ? "—" : `${trade.result_r > 0 ? "+" : ""}${trade.result_r.toFixed(2)}R`;
@@ -13,7 +12,6 @@ const resultTone = (trade: Trade) => (trade.result_r ?? 0) > 0 ? "text-emerald-4
 
 export function TradesTable() {
   const [trades, setTrades] = useState<Trade[]>([]);
-  const [tags, setTags] = useState<Tag[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [deleteError, setDeleteError] = useState("");
@@ -22,13 +20,12 @@ export function TradesTable() {
   const [tradeMode, setTradeMode] = useState<TradeMode | "">("");
   const [direction, setDirection] = useState<Direction | "">(""); const [result, setResult] = useState<ResultType | "">("");
   const [confidence, setConfidence] = useState(""); const [context, setContext] = useState(""); const [minRr, setMinRr] = useState("");
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
 
   useEffect(() => {
-    Promise.all([fetch("/api/trades"), fetch("/api/tags")]).then(async ([tradesResponse, tagsResponse]) => {
-      const tradeData = await tradesResponse.json(); const tagData = await tagsResponse.json();
-      if (!tradesResponse.ok) throw new Error(tradeData.error); if (!tagsResponse.ok) throw new Error(tagData.error);
-      setTrades(tradeData.trades); setTags(tagData.tags);
+    fetch("/api/trades").then(async (response) => {
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      setTrades(data.trades);
     }).catch((reason) => setError(reason instanceof Error ? reason.message : "Daten konnten nicht geladen werden.")).finally(() => setLoading(false));
   }, []);
 
@@ -39,12 +36,12 @@ export function TradesTable() {
     if (result && trade.result_type !== result) return false; if (confidence && trade.confidence !== Number(confidence)) return false;
     if (context && !(trade.context ?? "").toLocaleLowerCase("de").includes(context.toLocaleLowerCase("de"))) return false;
     if (minRr && (trade.planned_rr === null || trade.planned_rr < Number(minRr))) return false;
-    return hasEveryTag(trade, selectedTags);
-  }), [trades, from, to, tradeMode, instrument, direction, result, confidence, context, minRr, selectedTags]);
+    return true;
+  }), [trades, from, to, tradeMode, instrument, direction, result, confidence, context, minRr]);
 
   const instruments = [...new Set(trades.map((trade) => trade.instrument))].sort();
-  const active = [from, to, tradeMode, instrument, direction, result, confidence, context, minRr].filter(Boolean).length + selectedTags.length;
-  function reset() { setFrom(""); setTo(""); setTradeMode(""); setInstrument(""); setDirection(""); setResult(""); setConfidence(""); setContext(""); setMinRr(""); setSelectedTags([]); }
+  const active = [from, to, tradeMode, instrument, direction, result, confidence, context, minRr].filter(Boolean).length;
+  function reset() { setFrom(""); setTo(""); setTradeMode(""); setInstrument(""); setDirection(""); setResult(""); setConfidence(""); setContext(""); setMinRr(""); }
 
   async function removeTrade(trade: Trade) {
     if (!window.confirm(`${trade.instrument} vom ${formatDate(trade.trade_date)} endgültig löschen?`)) return;
@@ -78,7 +75,6 @@ export function TradesTable() {
         <label><span className="label">Min. R:R</span><input className="field" type="number" min="0" step="0.1" value={minRr} onChange={(e) => setMinRr(e.target.value)} placeholder="z. B. 2" /></label>
         <label><span className="label">Kontext</span><span className="relative block"><Search className="absolute left-3 top-3.5 h-3.5 w-3.5 text-zinc-700" /><input className="field pl-9" value={context} onChange={(e) => setContext(e.target.value)} placeholder="Suchtext" /></span></label>
       </div>
-      {tags.length > 0 && <div className="mt-4"><span className="label">Tags · alle gewählten müssen vorkommen</span><div className="flex flex-wrap gap-2">{tags.map((tag) => <button key={tag.id} onClick={() => setSelectedTags((current) => current.includes(tag.id) ? current.filter((id) => id !== tag.id) : [...current, tag.id])} className={`chip py-1.5 ${selectedTags.includes(tag.id) ? "chip-active" : ""}`}>{tag.name}</button>)}</div></div>}
     </section>
 
     {deleteError && <div role="alert" className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-3 text-xs text-rose-400">{deleteError}</div>}
@@ -89,7 +85,6 @@ export function TradesTable() {
         <Link href={`/trades/${trade.id}`} className="block p-4">
           <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${trade.trade_mode === "live" ? "bg-sky-500/10 text-sky-400" : "bg-zinc-800 text-zinc-500"}`}>{trade.trade_mode === "live" ? "Live" : "Backtest"}</span><span className="text-xs text-zinc-600">{formatDate(trade.trade_date)}{trade.trade_time ? ` · ${trade.trade_time.slice(0,5)}` : ""}</span></div><p className="mt-3 truncate text-lg font-bold text-zinc-100">{trade.instrument}</p></div>{trade.screenshot_signed_url ? <img src={trade.screenshot_signed_url} alt="Chart" className="h-16 w-24 shrink-0 rounded-lg object-cover" /> : <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-ink"><ImageIcon className="h-5 w-5 text-zinc-700" /></span>}</div>
           <div className="mt-4 grid grid-cols-3 gap-3 border-t border-line pt-4"><div><span className="label">Richtung</span><p className={`text-xs font-bold ${trade.direction === "long" ? "text-emerald-400" : trade.direction === "short" ? "text-rose-400" : "text-zinc-500"}`}>{trade.direction?.toUpperCase() ?? "—"}</p></div><div><span className="label">Ergebnis</span><p className={`text-sm font-bold tabular-nums ${resultTone(trade)}`}>{resultText(trade)}</p></div><div><span className="label">R:R</span><p className="text-sm font-semibold tabular-nums text-zinc-400">{trade.planned_rr?.toFixed(2) ?? "—"}</p></div></div>
-          {trade.tags.length > 0 && <div className="mt-4 flex flex-wrap gap-1.5">{trade.tags.slice(0,4).map((tag) => <span key={tag.id} className="rounded bg-zinc-800 px-2 py-1 text-[10px] text-zinc-400">{tag.name}</span>)}{trade.tags.length > 4 && <span className="px-1 py-1 text-[10px] text-zinc-600">+{trade.tags.length - 4}</span>}</div>}
         </Link>
         <div className="grid grid-cols-2 border-t border-line"><Link href={`/trades/${trade.id}/bearbeiten`} className="flex min-h-12 items-center justify-center gap-2 border-r border-line text-xs font-semibold text-zinc-300"><Pencil className="h-4 w-4" /> Bearbeiten</Link><button type="button" onClick={() => void removeTrade(trade)} disabled={deletingId !== null} className="flex min-h-12 items-center justify-center gap-2 text-xs font-semibold text-rose-400 disabled:opacity-50">{deletingId === trade.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Löschen</button></div>
       </article>)}
@@ -98,7 +93,7 @@ export function TradesTable() {
 
     <section className="panel hidden overflow-hidden md:block">
       <div className="flex items-center justify-between border-b border-line px-5 py-4"><p className="text-sm font-semibold">{filtered.length} {filtered.length === 1 ? "Eintrag" : "Einträge"}</p><p className="text-xs text-zinc-600">{trades.length !== filtered.length ? `${trades.length} gesamt` : "Neueste zuerst"}</p></div>
-      <div className="overflow-x-auto"><table className="w-full min-w-[1180px] text-left"><thead className="bg-ink/50 text-[10px] uppercase tracking-[0.13em] text-zinc-600"><tr><th className="px-5 py-3">Datum</th><th className="px-4 py-3">Typ</th><th className="px-4 py-3">Instrument</th><th className="px-4 py-3">Richtung</th><th className="px-4 py-3">Ergebnis</th><th className="px-4 py-3">R:R</th><th className="px-4 py-3">Confidence</th><th className="px-4 py-3">Tags</th><th className="px-4 py-3 text-right">Chart</th><th className="px-5 py-3 text-right">Aktion</th></tr></thead>
+      <div className="overflow-x-auto"><table className="w-full min-w-[980px] text-left"><thead className="bg-ink/50 text-[10px] uppercase tracking-[0.13em] text-zinc-600"><tr><th className="px-5 py-3">Datum</th><th className="px-4 py-3">Typ</th><th className="px-4 py-3">Instrument</th><th className="px-4 py-3">Richtung</th><th className="px-4 py-3">Ergebnis</th><th className="px-4 py-3">R:R</th><th className="px-4 py-3">Confidence</th><th className="px-4 py-3 text-right">Chart</th><th className="px-5 py-3 text-right">Aktion</th></tr></thead>
       <tbody className="divide-y divide-line">{filtered.map((trade) => <tr key={trade.id} className="group text-sm transition hover:bg-white/[0.02]">
         <td className="px-5 py-4"><Link href={`/trades/${trade.id}`} className="font-medium text-zinc-200 group-hover:text-lime">{formatDate(trade.trade_date)}</Link><span className="ml-2 text-xs text-zinc-600">{trade.trade_time?.slice(0,5)}</span></td>
         <td className="px-4 py-4"><span className={`rounded-full px-2 py-1 text-[10px] font-bold uppercase tracking-wide ${trade.trade_mode === "live" ? "bg-sky-500/10 text-sky-400" : "bg-zinc-800 text-zinc-500"}`}>{trade.trade_mode === "live" ? "Live" : "Backtest"}</span></td>
@@ -106,10 +101,9 @@ export function TradesTable() {
         <td className={`px-4 py-4 text-xs font-semibold uppercase ${trade.direction === "long" ? "text-emerald-400" : trade.direction === "short" ? "text-rose-400" : "text-zinc-500"}`}>{trade.direction?.toUpperCase() ?? "—"}</td>
         <td className={`px-4 py-4 font-semibold tabular-nums ${resultTone(trade)}`}>{resultText(trade)}</td>
         <td className="px-4 py-4 tabular-nums text-zinc-400">{trade.planned_rr?.toFixed(2) ?? "—"}</td><td className="px-4 py-4 text-zinc-400">{trade.confidence === null ? "—" : `${trade.confidence}/5`}</td>
-        <td className="max-w-sm px-4 py-4"><div className="flex flex-wrap gap-1">{trade.tags.slice(0,3).map((tag) => <span key={tag.id} className="rounded bg-zinc-800 px-2 py-1 text-[10px] text-zinc-400">{tag.name}</span>)}{trade.tags.length > 3 && <span className="px-1 py-1 text-[10px] text-zinc-600">+{trade.tags.length - 3}</span>}</div></td>
         <td className="px-4 py-4 text-right">{trade.screenshot_signed_url ? <img src={trade.screenshot_signed_url} alt="Chart" className="ml-auto h-10 w-16 rounded object-cover" /> : <ImageIcon className="ml-auto h-4 w-4 text-zinc-700" />}</td>
         <td className="px-5 py-4 text-right"><div className="flex justify-end gap-2"><Link href={`/trades/${trade.id}/bearbeiten`} className="inline-flex items-center gap-1.5 rounded-lg border border-line px-3 py-2 text-xs font-semibold text-zinc-300 transition hover:border-zinc-600 hover:text-white"><Pencil className="h-3.5 w-3.5" /> Bearbeiten</Link><button type="button" onClick={() => void removeTrade(trade)} disabled={deletingId !== null} className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/20 px-3 py-2 text-xs font-semibold text-rose-400 transition hover:bg-rose-500/5 disabled:cursor-not-allowed disabled:opacity-50" aria-label={`${trade.instrument} löschen`}>{deletingId === trade.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />} Löschen</button></div></td>
-      </tr>)}{filtered.length === 0 && <tr><td colSpan={10} className="px-5 py-16 text-center text-sm text-zinc-600">Keine Einträge für diese Filter.</td></tr>}</tbody></table></div>
+      </tr>)}{filtered.length === 0 && <tr><td colSpan={9} className="px-5 py-16 text-center text-sm text-zinc-600">Keine Einträge für diese Filter.</td></tr>}</tbody></table></div>
     </section>
   </div>;
 }

@@ -3,24 +3,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ImagePlus, Loader2, Plus, Sparkles, X } from "lucide-react";
+import { ImagePlus, Loader2, Sparkles, X } from "lucide-react";
 import { usePendingScreenshot, type PendingScreenshot } from "@/components/pending-screenshot-provider";
 import { TradeImageViewer } from "@/components/trade-image-viewer";
 import { instrumentForMode, instrumentOptions, selectedInstrument, SEPTEMBER_ROLLOVER } from "@/lib/instruments";
-import type { AnalysisResult, Direction, ResultType, Tag, Trade, TradeInput, TradeMode } from "@/lib/types";
-
-const LOCAL_TAGS: Tag[] = [
-  ["10000000-0000-4000-8000-000000000001", "1m BOS"], ["10000000-0000-4000-8000-000000000002", "5m BOS"],
-  ["10000000-0000-4000-8000-000000000003", "FVG"], ["10000000-0000-4000-8000-000000000004", "FVG Pullback"],
-  ["10000000-0000-4000-8000-000000000005", "IFVG"], ["10000000-0000-4000-8000-000000000006", "FVG respected"],
-  ["10000000-0000-4000-8000-000000000007", "FVG disrespected"], ["10000000-0000-4000-8000-000000000008", "Orderflow disrespected"],
-  ["10000000-0000-4000-8000-000000000009", "Liquidity Sweep"], ["10000000-0000-4000-8000-000000000010", "Sell-Side Liquidity"],
-  ["10000000-0000-4000-8000-000000000011", "Buy-Side Liquidity"], ["10000000-0000-4000-8000-000000000012", "5m Abflachung"],
-  ["10000000-0000-4000-8000-000000000013", "Konsolidierung"], ["10000000-0000-4000-8000-000000000014", "Trendfortsetzung"],
-  ["10000000-0000-4000-8000-000000000015", "Reversal"], ["10000000-0000-4000-8000-000000000016", "HTF FVG"],
-  ["10000000-0000-4000-8000-000000000017", "4h FVG"], ["10000000-0000-4000-8000-000000000018", "Rejection"],
-  ["10000000-0000-4000-8000-000000000019", "Displacement"],
-].map(([id, name]) => ({ id, name, category_id: null, is_default: true }));
+import type { AnalysisResult, Direction, ResultType, Trade, TradeInput, TradeMode } from "@/lib/types";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -104,7 +91,6 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
     document.addEventListener("visibilitychange", refresh);
     return () => { clearTimeout(timer); window.removeEventListener("focus", refresh); document.removeEventListener("visibilitychange", refresh); };
   }, []);
-  const [tags, setTags] = useState<Tag[]>(LOCAL_TAGS);
   const [selected, setSelected] = useState<string[]>(initialTrade?.tags.map((tag) => tag.id) ?? []);
   const [detected, setDetected] = useState<Set<string>>(new Set());
   const [editedScreenshot, setEditedScreenshot] = useState<PendingScreenshot>({
@@ -137,9 +123,6 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
     setMessage(null);
   }
 
-  useEffect(() => {
-    fetch("/api/tags").then(async (response) => response.ok ? response.json() : Promise.reject()).then((data) => setTags(data.tags)).catch(() => undefined);
-  }, []);
 
   useEffect(() => {
     let draft: Partial<StoredDraft> | null = null;
@@ -211,7 +194,6 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
       ? { ...current, result_type, direction: null, confidence: null, entry: "", stop_loss: "", take_profit: "", result_r: "" }
       : { ...current, result_type, direction: current.direction ?? "long" });
   }
-  function toggle(tag: string) { setSelected((current) => current.includes(tag) ? current.filter((item) => item !== tag) : [...current, tag]); }
 
   async function handleFile(file?: File) {
     if (!file) return;
@@ -255,19 +237,8 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
       }
       return next;
     });
-    const names = new Set(data.detectedObservations.map((name) => name.toLocaleLowerCase("de")));
-    setSelected((current) => [...new Set([...current, ...tags.filter((tag) => names.has(tag.name.toLocaleLowerCase("de"))).map((tag) => tag.id)])]);
     if (data.screenshotUrl) URL.revokeObjectURL(localPreview);
     setDetected(recognized); updateScreenshot({ path: data.screenshotPath, preview: data.screenshotUrl || localPreview });
-  }
-
-  async function createTag() {
-    const name = newTag.trim(); if (!name) return;
-    try {
-      const response = await fetch("/api/tags", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, category_id: null }) });
-      const data = await response.json(); if (!response.ok) throw new Error(data.error);
-      setTags((current) => [...current, data.tag]); setSelected((current) => [...current, data.tag.id]); setNewTag(""); setAddingTag(false);
-    } catch (error) { setMessage({ type: "error", text: error instanceof Error ? error.message : "Tag konnte nicht erstellt werden." }); }
   }
 
   async function save() {
@@ -353,11 +324,7 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
           </div>
         </section>
 
-        <section className="panel p-4 sm:p-5 lg:p-6">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3"><div><p className="text-sm font-semibold">Bestätigungen & Beobachtungen</p><p className="mt-1 text-xs text-zinc-600">Mehrfachauswahl möglich.</p></div><button type="button" onClick={() => setAddingTag(true)} className="flex min-h-11 items-center gap-1 px-1 text-xs font-semibold text-lime"><Plus className="h-3.5 w-3.5" /> hinzufügen</button></div>
-          {addingTag && <div className="mb-4 grid grid-cols-[minmax(0,1fr)_44px_44px] gap-2"><input autoFocus className="field" maxLength={80} placeholder="Eigener Tag" value={newTag} onChange={(e) => setNewTag(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void createTag(); if (e.key === "Escape") setAddingTag(false); }} /><button type="button" aria-label="Tag speichern" onClick={() => void createTag()} className="flex min-h-11 items-center justify-center rounded-lg bg-lime text-ink"><Check className="h-4 w-4" /></button><button type="button" aria-label="Abbrechen" onClick={() => setAddingTag(false)} className="flex min-h-11 items-center justify-center rounded-lg border border-line text-zinc-500"><X className="h-4 w-4" /></button></div>}
-          <div className="flex flex-wrap gap-2">{tags.map((tag) => <button type="button" key={tag.id} onClick={() => toggle(tag.id)} className={`chip ${selected.includes(tag.id) ? "chip-active" : ""}`}>{tag.name}</button>)}</div>
-        </section>
+
       </div>
 
       <aside className="space-y-6 xl:sticky xl:top-24 xl:self-start">

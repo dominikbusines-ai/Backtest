@@ -4,6 +4,9 @@ Minimalistische Next.js-Web-App zur schnellen Erfassung und statistischen Auswer
 
 ## Funktionen
 
+- „Eigene Nachbetrachtungen“ ist zunächst eingeklappt; die einzelnen Einträge lassen sich ebenfalls separat öffnen.
+- Tags sind aus der aktiven Oberfläche entfernt (Erfassung, Trades, Details, Analyse und Einstellungen); die Tag-Verwaltungskomponente wird nicht mehr eingebunden. Tag-Tabellen, Kategorien, API-Routen und gespeicherte Verknüpfungen bleiben erhalten. Trade-Bearbeitungen ändern `trade_tags` nicht mehr, auch bei leeren oder veralteten `tag_ids`. Bereits vorhandene Entwürfe neuer Trades behalten ihre Tag-IDs; die Bild-KI ordnet keine Tags mehr automatisch zu. Statistiken berücksichtigen alle Einträge des gewählten Modus ohne Tag-Filter. Schutzprüfungen: `node --test tests/tag-preservation.test.mjs`.
+
 - Instrumentauswahl: Backtests ausschließlich `MNQ SEP26` / `MES SEP26`; neue Live-Einträge bis 13.09.2026 `MNQU26` / `MESU26`, ab 14.09.2026, 00:00 Europe/Berlin, automatisch `MNQZ26` / `MESZ26`. Grundlage: [CME Roll Dates](https://www.cmegroup.com/trading/equity-index/rolldates.html), September-Verfall am 18.09.2026. Dies implementiert diesen einen September-Rollover, keine weiteren Quartale.
 - Die Instrumentliste gilt auch für das KI-Ausgabeschema und die serverseitige Speicherung. Bestehende Trades behalten beim Bearbeiten ihren gespeicherten Kontrakt; neue Auswahlmöglichkeiten folgen der aktuellen Liste. Offene und wiederhergestellte neue Entwürfe werden nach Produkt (MNQ/MES) angepasst. Prüfungen: `node --test tests/instruments.test.mjs`.
 
@@ -17,14 +20,11 @@ Minimalistische Next.js-Web-App zur schnellen Erfassung und statistischen Auswer
 - Strukturierte KI-Extraktion ohne Bewertung des Trades
 - Eigener „Kein Trade“-Modus für bewusst ausgelassene Entries und unlogische Setups
 - Automatische Berechnung des geplanten Risk-to-Reward
-- Frei verwaltbare Tags und Kategorien
-- Trade-Tabelle mit Zeitraum-, Instrument-, Richtungs-, Ergebnis-, Confidence-, Kontext-, R:R- und Mehrfach-Tag-Filtern
+- Trade-Tabelle mit Zeitraum-, Instrument-, Richtungs-, Ergebnis-, Confidence-, Kontext- und R:R-Filtern
 - Detailansicht, Bearbeitung und Löschung
 - Kennzahlen: Trades, Kein Trade, Wins, Losses, Break-even, Winrate, Ø R, Gesamt-R, Ø Gewinner/Verlierer, Ø geplantes R:R, Profit Factor und Expectancy
 - Vollständig getrennte Analyse von Backtests und Live Trades
 - iPhone-optimierte Bedienung mit Safe-Area-Unterstützung, mobiler Navigation und Kartenansichten
-- Analyse einzelner Tags und beliebiger Tag-Kombinationen
-- Direkter Vergleich zweier Tag-Gruppen
 - Private Supabase-Storage-Bucket für Screenshots
 
 ## Technischer Aufbau

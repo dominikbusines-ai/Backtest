@@ -67,14 +67,11 @@ export async function updateTrade(id: string, input: TradeInput) {
   if (readError) throw readError;
   assertInstrument(input, existing as Pick<Trade, "trade_mode" | "instrument">);
   const { tag_ids, ...trade } = input;
+  // Tags are retired from the UI. Never replace existing links from an old or
+  // empty client snapshot; this also protects links added after loading a draft.
+  void tag_ids;
   const { error } = await supabase.from("trades").update(trade).eq("id", id);
   if (error) throw error;
-  const { error: deleteError } = await supabase.from("trade_tags").delete().eq("trade_id", id);
-  if (deleteError) throw deleteError;
-  if (tag_ids.length) {
-    const { error: linkError } = await supabase.from("trade_tags").insert(tag_ids.map((tag_id) => ({ trade_id: id, tag_id })));
-    if (linkError) throw linkError;
-  }
 }
 
 export async function deleteTrade(id: string) {
