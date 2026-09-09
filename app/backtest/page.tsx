@@ -1,0 +1,11 @@
+import { AppShell } from "@/components/app-shell";
+import { BacktestForm } from "@/components/backtest-form";
+
+export default function BacktestPage() {
+  return (
+    <AppShell>
+      <div className="mb-7"><p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-lime">Neuer Eintrag</p><h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">Trade erfassen</h1><p className="mt-2 text-sm text-zinc-600">Backtest oder echten Live Trade wählen, Screenshot ablegen und Werte prüfen.</p></div>
+      <BacktestForm />
+    </AppShell>
+  );
+}

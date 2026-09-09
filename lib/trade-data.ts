@@ -42,7 +42,12 @@ export async function getTrade(id: string): Promise<Trade | null> {
 export async function createTrade(input: TradeInput): Promise<string> {
   const supabase = requireSupabase();
   const { tag_ids, ...trade } = input;
-  const { data, error } = await supabase.from("trades").insert(trade).select("id").single();
+  // The creation timestamp is deliberately assigned only on insert. Updates
+  // keep this value untouched so the AI can use it as a stable timeline marker.
+  const { data, error } = await supabase.from("trades").insert({
+    ...trade,
+    created_at: new Date().toISOString(),
+  }).select("id").single();
   if (error) throw error;
   if (tag_ids.length) {
     const { error: linkError } = await supabase.from("trade_tags").insert(tag_ids.map((tag_id) => ({ trade_id: data.id, tag_id })));
