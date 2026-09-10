@@ -2,14 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, ClipboardPlus, House, Settings, Table2 } from "lucide-react";
+import { BarChart3, ClipboardPlus, House, Table2 } from "lucide-react";
 
 const nav = [
   { href: "/", label: "Start", icon: House },
   { href: "/backtest", label: "Backtest", icon: ClipboardPlus },
   { href: "/trades", label: "Trades", icon: Table2 },
   { href: "/analyse", label: "Analyse", icon: BarChart3 },
-  { href: "/einstellungen", label: "Einstellungen", icon: Settings },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -37,10 +36,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </header>
       <main className="app-main mx-auto max-w-[1440px] px-4 py-6 sm:px-5 sm:py-8 lg:px-8">{children}</main>
       <nav className="mobile-nav fixed inset-x-0 bottom-0 z-50 border-t border-line bg-ink/95 px-2 pt-1.5 backdrop-blur-xl sm:hidden" aria-label="Mobile Hauptnavigation">
-        <div className="mx-auto grid max-w-md grid-cols-5 gap-1">
+        <div className="mx-auto grid max-w-md grid-cols-4 gap-1">
           {nav.map(({ href, label, icon: Icon }) => {
             const active = href === "/" ? pathname === "/" : pathname.startsWith(href);
-            return <Link key={href} href={href} aria-label={label} aria-current={active ? "page" : undefined} className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-semibold transition ${active ? "bg-lime/10 text-lime" : "text-zinc-500"}`}><Icon className="h-5 w-5" /><span>{href === "/einstellungen" ? "Optionen" : label}</span></Link>;
+            return <Link key={href} href={href} aria-label={label} aria-current={active ? "page" : undefined} className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[10px] font-semibold transition ${active ? "bg-lime/10 text-lime" : "text-zinc-500"}`}><Icon className="h-5 w-5" /><span>{label}</span></Link>;
           })}
         </div>
       </nav>
