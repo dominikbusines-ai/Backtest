@@ -3,13 +3,46 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { loadMistakeSources } from "@/lib/mistake-data";
 import { explainAnthropicError } from "@/lib/anthropic-error";
-import { comparisonSources, makeReport, validatePatterns } from "@/lib/mistake-patterns";
+import { comparisonSources, makeReport, validatePatterns, type MistakeReport } from "@/lib/mistake-patterns";
+import { ensureMistakeReportStore, mistakeFingerprint, readMistakeReport, saveMistakeReport } from "@/lib/mistake-report-store";
+import { MISTAKE_TIMEOUT_MS, streamMistakeMessage } from "@/lib/mistake-stream";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 180;
 
 const requestSchema = z.object({ trade_id: z.string().uuid().optional() });
+
+async function savedResponse(report: MistakeReport, fingerprint: string, tradeId?: string) {
+  try {
+    await saveMistakeReport(report, fingerprint, tradeId);
+    return NextResponse.json({ ...report, persisted: true }, { headers: { "Cache-Control": "no-store" } });
+  } catch {
+    return NextResponse.json({ ...report, persisted: false, storageWarning: "Die Auswertung ist fertig, konnte aber nicht in Supabase gespeichert werden. Sie wird zusätzlich in diesem Browser gesichert. Die bisherige Cloud-Liste bleibt erhalten." }, { headers: { "Cache-Control": "no-store" } });
+  }
+}
+
+// Viewing a report NEVER invokes Anthropic, including when sources have changed.
+export async function GET(request: Request) {
+  const parsed = requestSchema.safeParse({ trade_id: new URL(request.url).searchParams.get("trade_id") ?? undefined });
+  if (!parsed.success) return NextResponse.json({ error: "Ungültige Anfrage." }, { status: 400 });
+  try {
+    const all = await loadMistakeSources();
+    const target = parsed.data.trade_id ? all.find((source) => source.id === `trade:${parsed.data.trade_id}`) : undefined;
+    if (parsed.data.trade_id && (!target || target.kind !== "live")) return NextResponse.json({ error: "Live-Trade nicht gefunden." }, { status: 404 });
+    const sources = comparisonSources(all, target).filter((source) => source.id === target?.id || Object.values(source.fields).some((text) => text.trim()));
+    const fingerprint = mistakeFingerprint(sources, parsed.data.trade_id);
+    const saved = await readMistakeReport(parsed.data.trade_id, fingerprint);
+    return NextResponse.json({ report: saved?.report ?? null, stale: !!saved && saved.fingerprint !== fingerprint }, { headers: { "Cache-Control": "no-store" } });
+  } catch {
+    // Still display the last successful snapshot if the current inputs cannot be checked.
+    try {
+      const saved = await readMistakeReport(parsed.data.trade_id);
+      if (saved) return NextResponse.json({ report: saved.report, stale: true, warning: "Gespeicherte Liste geladen. Ob alle aktuellen Einträge enthalten sind, konnte gerade nicht geprüft werden." }, { headers: { "Cache-Control": "no-store" } });
+    } catch { /* Preserve any browser fallback instead of initiating an AI request. */ }
+    return NextResponse.json({ error: "Gespeicherte Auswertungen konnten nicht geladen werden. Es wurde keine KI-Anfrage gestartet." }, { status: 503 });
+  }
+}
 
 export async function POST(request: Request) {
   const parsed = requestSchema.safeParse(await request.json().catch(() => null));
@@ -21,16 +54,21 @@ export async function POST(request: Request) {
     const ordered = comparisonSources(all, target);
     const excluded = all.length - ordered.length;
     const sources = ordered.filter((source) => source.id === target?.id || Object.values(source.fields).some((text) => text.trim()));
+    const fingerprint = mistakeFingerprint(sources, parsed.data.trade_id);
+    const cached = await readMistakeReport(parsed.data.trade_id, fingerprint, false);
+    if (cached) return NextResponse.json({ ...cached.report, persisted: true, cached: true }, { headers: { "Cache-Control": "no-store" } });
     if (!sources.length || target?.noTrade || (target && !Object.values(target.fields).some((text) => text.trim()))) {
-      return NextResponse.json(makeReport([], sources, target, excluded), { headers: { "Cache-Control": "no-store" } });
+      await ensureMistakeReportStore();
+      return savedResponse(makeReport([], sources, target, excluded), fingerprint, parsed.data.trade_id);
     }
-    const records = JSON.stringify(sources);
+    const records = JSON.stringify(sources.map((source) => ({ ...source, fields: Object.fromEntries(Object.entries(source.fields).filter(([, text]) => text.trim())) })));
     if (records.length > 120000) return NextResponse.json({ error: "Die Texte sind für einen einzelnen Vergleich zu umfangreich. Es wurde nichts gekürzt oder an die KI gesendet." }, { status: 413 });
     if (!process.env.ANTHROPIC_API_KEY) return NextResponse.json({ error: "ANTHROPIC_API_KEY ist noch nicht konfiguriert. Der Trade bleibt gespeichert." }, { status: 503 });
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 45000, maxRetries: 0 });
+    await ensureMistakeReportStore();
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: MISTAKE_TIMEOUT_MS, maxRetries: 0 });
     let response;
     try {
-      response = await client.messages.create({
+      response = await streamMistakeMessage(client, {
         model: process.env.ANTHROPIC_TEXT_MODEL || process.env.ANTHROPIC_VISION_MODEL || "claude-haiku-4-5",
         max_tokens: 8000,
         system: [
@@ -63,7 +101,7 @@ export async function POST(request: Request) {
     const block = response.content.find((item) => item.type === "tool_use" && item.name === "report_patterns");
     if (!block || block.type !== "tool_use") throw new Error("Keine auswertbare KI-Antwort erhalten.");
     const patterns = validatePatterns(block.input, sources, target);
-    return NextResponse.json(makeReport(patterns, sources, target, excluded), { headers: { "Cache-Control": "no-store" } });
+    return savedResponse(makeReport(patterns, sources, target, excluded), fingerprint, parsed.data.trade_id);
   } catch (error) {
     return NextResponse.json({ error: error instanceof z.ZodError ? "Die KI-Antwort hat ein ungültiges Format. Bitte erneut prüfen." : error instanceof Error ? error.message : "Fehlerprüfung nicht verfügbar." }, { status: 500 });
   }

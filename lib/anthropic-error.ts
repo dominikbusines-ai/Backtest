@@ -26,7 +26,7 @@ export function explainAnthropicError(error: unknown) {
     description = "Anthropic begrenzt gerade die Anfragen oder Tokenmenge. Bitte kurz warten und erneut prüfen. Das ist kein Nachweis für fehlendes Guthaben.";
   } else if (name === "APIConnectionTimeoutError" || /timed out|timeout/.test(message)) {
     code = "TIMEOUT";
-    description = "Die Anthropic-Anfrage hat das Zeitlimit von 45 Sekunden überschritten. Es liegt keine abgeschlossene Auswertung vor.";
+    description = "Die Anthropic-Anfrage hat das Zeitlimit von zwei Minuten überschritten. Die letzte erfolgreich gespeicherte Auswertung bleibt erhalten.";
   } else if (name === "APIConnectionError" || /connection error|fetch failed/.test(message)) {
     code = "CONNECTION";
     description = "Der Server konnte Anthropic nicht erreichen. Bitte später erneut versuchen.";

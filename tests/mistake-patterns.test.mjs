@@ -67,19 +67,22 @@ test("Duplicate labels fail closed; short explicit notes remain supported", () =
   assert.equal(helpers.validatePatterns(raw(evidence(short)), [short], short).length, 1);
 });
 
-async function routeCheck({ sources = [earlier, target], input = { trade_id: targetId }, output = raw(evidence(earlier), evidence(target)), stop = "tool_use", fail = false } = {}) {
-  const calls = [];
+async function routeCheck({ sources = [earlier, target], input = { trade_id: targetId }, output = raw(evidence(earlier), evidence(target)), stop = "tool_use", fail = false, cached = null, method = "POST", saveFails = false } = {}) {
+  const calls = [], saves = [];
   const route = load("app/api/mistake-patterns/route.ts", {
     "next/server": { NextResponse: { json: (body, init) => Response.json(body, init) } },
     zod: { z }, "@/lib/mistake-data": { loadMistakeSources: async () => sources }, "@/lib/mistake-patterns": helpers,
     "@/lib/anthropic-error": providerErrors,
+    "@/lib/mistake-report-store": { mistakeFingerprint: () => "a".repeat(64), readMistakeReport: async () => cached, ensureMistakeReportStore: async () => {}, saveMistakeReport: async (...args) => { if (saveFails) throw Error("storage failed"); saves.push(args); } },
+    "@/lib/mistake-stream": { MISTAKE_TIMEOUT_MS: 120000, streamMistakeMessage: (client, args) => client.messages.create(args) },
     "@anthropic-ai/sdk": class { messages = { create: async (args) => { calls.push(args); if (fail) throw new Error("private provider detail"); return { stop_reason: stop, content: [{ type: "tool_use", name: "report_patterns", input: output }] }; } }; },
   });
   const prior = process.env.ANTHROPIC_API_KEY;
   process.env.ANTHROPIC_API_KEY = "mock-only";
   try {
-    const response = await route.POST(new Request("http://localhost/api/mistake-patterns", { method: "POST", body: JSON.stringify(input) }));
-    return { status: response.status, body: await response.json(), calls };
+    const request = method === "GET" ? new Request(`http://localhost/api/mistake-patterns${input.trade_id ? `?trade_id=${input.trade_id}` : ""}`) : new Request("http://localhost/api/mistake-patterns", { method: "POST", body: JSON.stringify(input) });
+    const response = await route[method](request);
+    return { status: response.status, body: await response.json(), calls, saves };
   } finally { if (prior === undefined) delete process.env.ANTHROPIC_API_KEY; else process.env.ANTHROPIC_API_KEY = prior; }
 }
 test("API filters future sources, guards negation/injection, returns verified references without creation stamps", async () => {
@@ -95,7 +98,31 @@ test("Provider failure, truncated/fabricated responses never return clean or par
     const result = await routeCheck(args);
     assert.ok(result.status >= 500); assert.ok(result.body.error); assert.equal(result.body.patterns, undefined);
     assert.ok(!result.body.error.includes("private provider detail"));
+    assert.equal(result.saves.length, 0);
   }
+});
+
+test("GET only loads saved results, including stale snapshots, with no AI or writes", async () => {
+  const report = helpers.makeReport([], [earlier, target], target);
+  for (const cached of [null, { report, fingerprint: "a".repeat(64) }, { report, fingerprint: "b".repeat(64) }]) {
+    const result = await routeCheck({ method: "GET", cached });
+    assert.equal(result.status, 200); assert.equal(result.calls.length, 0); assert.equal(result.saves.length, 0);
+    assert.deepEqual(result.body.report, cached?.report ?? null);
+    assert.equal(result.body.stale, !!cached && cached.fingerprint !== "a".repeat(64));
+  }
+});
+test("POST reuses matching durable snapshot without another paid call", async () => {
+  const report = helpers.makeReport([], [earlier, target], target);
+  const result = await routeCheck({ cached: { fingerprint: "a".repeat(64), report } });
+  assert.equal(result.status, 200); assert.equal(result.calls.length, 0); assert.equal(result.saves.length, 0);
+  assert.equal(result.body.cached, true); assert.equal(result.body.persisted, true);
+});
+test("Valid report persists; failed storage returns report for browser fallback, never claims cloud success", async () => {
+  const saved = await routeCheck();
+  assert.equal(saved.saves.length, 1); assert.equal(saved.body.persisted, true);
+  const failed = await routeCheck({ saveFails: true });
+  assert.equal(failed.status, 200); assert.equal(failed.body.persisted, false);
+  assert.ok(failed.body.storageWarning); assert.equal(failed.body.patterns.length, 1);
 });
 test("No text/no trade means no paid call; Backtest and invalid IDs cannot trigger live checks", async () => {
   for (const current of [{ ...target, fields: {} }, { ...target, noTrade: true }]) {
