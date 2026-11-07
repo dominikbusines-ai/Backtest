@@ -24,6 +24,7 @@ const earlier = source(oldId, "backtest", "2026-11-06T10:00:00Z");
 const target = source(targetId, "live", "2026-11-07T10:00:00Z");
 const evidence = (s, field = "review_mistake") => ({ source_id: s.id, field, quote: s.fields[field] });
 const raw = (...items) => ({ patterns: [{ label: "Zu früher Entry", evidence: items }] });
+const refRaw = (...refs) => ({ patterns: [{ label: "Zu früher Entry", evidence_refs: refs }] });
 
 test("Current evidence is mandatory; historical mistakes cannot be attributed to the saved trade", () => {
   assert.throws(() => helpers.validatePatterns(raw(evidence(earlier)), [earlier, target], target), /ohne Beleg/);
@@ -67,7 +68,7 @@ test("Duplicate labels fail closed; short explicit notes remain supported", () =
   assert.equal(helpers.validatePatterns(raw(evidence(short)), [short], short).length, 1);
 });
 
-async function routeCheck({ sources = [earlier, target], input = { trade_id: targetId }, output = raw(evidence(earlier), evidence(target)), stop = "tool_use", fail = false, cached = null, method = "POST", saveFails = false } = {}) {
+async function routeCheck({ sources = [earlier, target], input = { trade_id: targetId }, output = refRaw("E1", "E2"), stop = "tool_use", fail = false, cached = null, method = "POST", saveFails = false } = {}) {
   const calls = [], saves = [];
   const route = load("app/api/mistake-patterns/route.ts", {
     "next/server": { NextResponse: { json: (body, init) => Response.json(body, init) } },
@@ -94,7 +95,7 @@ test("API filters future sources, guards negation/injection, returns verified re
   assert.ok(!JSON.stringify(result.body).includes("created_at"));
 });
 test("Provider failure, truncated/fabricated responses never return clean or partial reports", async () => {
-  for (const args of [{ fail: true }, { stop: "max_tokens" }, { output: raw(evidence(earlier)) }]) {
+  for (const args of [{ fail: true }, { stop: "max_tokens" }, { output: refRaw("E1") }, { output: refRaw("invented") }]) {
     const result = await routeCheck(args);
     assert.ok(result.status >= 500); assert.ok(result.body.error); assert.equal(result.body.patterns, undefined);
     assert.ok(!result.body.error.includes("private provider detail"));
@@ -138,8 +139,54 @@ test("Large input is rejected before sending, never silently truncated", async (
 });
 test("General list includes notes and both modes without current-trade requirement", async () => {
   const note = source("note-1", "note", "2026-11-05T10:00:00Z", { content: "Ich bin zu früh eingestiegen." });
-  const result = await routeCheck({ input: {}, sources: [earlier, target, note], output: raw(evidence(note, "content")) });
+  const result = await routeCheck({ input: {}, sources: [earlier, target, note], output: refRaw("E1") });
   assert.equal(result.status, 200); assert.equal(result.body.sourceCount, 3); assert.equal(result.body.patterns[0].notes, 1);
+});
+
+test("References restore exact original wording, including long text, punctuation and corrections", () => {
+  const text = 'Ich bin zu früh eingestiegen.\n„Geduld“ fehlte. ' + 'Weiterer Kontext. '.repeat(35) + ' Heute war es NICHT so.';
+  const current = { ...target, fields: { review_mistake: text, context: "Anderer Kontext", entry_note: "" } };
+  const catalog = helpers.mistakeEvidenceCatalog([current]);
+  assert.equal(catalog.records[0].fields.review_mistake.text, text);
+  assert.equal(catalog.records[0].fields.review_mistake.ref, "E1");
+  assert.equal(catalog.records[0].fields.context.ref, "E2");
+  assert.equal(catalog.records[0].fields.entry_note, undefined);
+  const resolved = helpers.resolveMistakeReferences(refRaw("E1"), [current], current);
+  assert.equal(resolved.patterns[0].evidence[0].quote, text);
+  assert.equal(resolved.patterns[0].evidence[0].field, "review_mistake");
+  assert.equal(resolved.rejectedPatternCount, 0);
+  const report = helpers.makeReport(resolved.patterns, [current], current);
+  assert.deepEqual(helpers.mistakeReportSchema.parse(report), report);
+});
+
+test("Unknown references reject only their entire pattern, never remap to another source", async () => {
+  const output = { patterns: [
+    ...refRaw("E1", "E2").patterns,
+    { label: "Unbelegte Aussage", evidence_refs: ["E2", "E999"] },
+    { label: "Nur historisch", evidence_refs: ["E1"] },
+  ] };
+  const result = await routeCheck({ output });
+  assert.equal(result.status, 200); assert.equal(result.saves.length, 1);
+  assert.equal(result.body.patterns.length, 1); assert.equal(result.body.rejectedPatternCount, 2);
+  assert.equal(result.body.patterns[0].previous, 1);
+  assert.equal(helpers.mistakeReportSchema.parse(result.body).rejectedPatternCount, 2);
+});
+
+test("Duplicate labels merge confirmed references and counts without losing separate valid patterns", () => {
+  const result = helpers.resolveMistakeReferences({ patterns: [
+    ...refRaw("E1").patterns, ...refRaw("E1", "E2").patterns,
+    { label: "Weiteres Muster", evidence_refs: ["E2"] },
+  ] }, [earlier, target]);
+  assert.equal(result.patterns.length, 2); assert.equal(result.rejectedPatternCount, 0);
+  assert.equal(result.patterns[0].evidence.length, 2);
+  assert.equal(result.patterns[0].live, 1); assert.equal(result.patterns[0].backtest, 1);
+});
+
+test("Entirely unconfirmed output never becomes a saved clean report; genuine empty output remains valid", () => {
+  assert.throws(() => helpers.resolveMistakeReferences(refRaw("E999"), [target], target), /Keine KI-Zuordnung/);
+  assert.throws(() => helpers.resolveMistakeReferences(refRaw("E1"), [earlier, target], target), /Keine KI-Zuordnung/);
+  const result = helpers.resolveMistakeReferences({ patterns: [] }, [target], target);
+  assert.deepEqual(result, { patterns: [], rejectedPatternCount: 0 });
 });
 test("Reader paginates, excludes screenshots, never writes, detects row limit", async () => {
   const calls = [];

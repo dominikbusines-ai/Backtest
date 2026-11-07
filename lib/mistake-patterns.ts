@@ -12,7 +12,7 @@ export type MistakeSource = {
 };
 
 const evidenceSchema = z.object({
-  source_id: z.string().min(1), field: z.string().min(1), quote: z.string().trim().min(2).max(400),
+  source_id: z.string().min(1), field: z.string().min(1), quote: z.string().trim().min(2).max(120000),
 });
 export const patternInputSchema = z.object({ patterns: z.array(z.object({
   label: z.string().trim().min(3).max(100),
@@ -31,6 +31,7 @@ export type MistakeReport = {
   excludedCount: number;
   targetDate: string;
   isToday: boolean;
+  rejectedPatternCount?: number;
 };
 
 export const mistakeReportSchema = z.object({
@@ -44,7 +45,50 @@ export const mistakeReportSchema = z.object({
   status: z.enum(["repeated", "documented", "no_evidence", "insufficient", "no_trade"]),
   generatedAt: z.string().datetime(), sourceCount: z.number().int().nonnegative(),
   excludedCount: z.number().int().nonnegative(), targetDate: z.string(), isToday: z.boolean(),
+  rejectedPatternCount: z.number().int().nonnegative().optional(),
 });
+
+// The model selects references; original wording never needs to be copied by the model.
+export function mistakeEvidenceCatalog(sources: MistakeSource[]) {
+  const references = new Map<string, z.infer<typeof evidenceSchema>>();
+  const records = sources.map((source) => ({ ...source, fields: Object.fromEntries(
+    Object.entries(source.fields).filter(([, text]) => text.trim()).map(([field, text]) => {
+      const ref = `E${references.size + 1}`;
+      references.set(ref, { source_id: source.id, field, quote: text });
+      return [field, { ref, text }];
+    }),
+  ) }));
+  return { records, references };
+}
+
+export function resolveMistakeReferences(raw: unknown, sources: MistakeSource[], target?: MistakeSource) {
+  const input = z.object({ patterns: z.array(z.unknown()).max(200) }).parse(raw);
+  const itemSchema = z.object({ label: z.string().trim().min(3).max(100), evidence_refs: z.array(z.string()).min(1).max(1000) });
+  const { references } = mistakeEvidenceCatalog(sources);
+  const grouped = new Map<string, MistakePattern>();
+  let rejectedPatternCount = 0;
+  for (const item of input.patterns) {
+    const parsed = itemSchema.safeParse(item);
+    if (!parsed.success || parsed.data.evidence_refs.some((ref) => !references.has(ref))) {
+      rejectedPatternCount++; continue;
+    }
+    const evidence = [...new Set(parsed.data.evidence_refs)].map((ref) => references.get(ref)!);
+    if (target && !evidence.some((entry) => entry.source_id === target.id)) {
+      rejectedPatternCount++; continue;
+    }
+    try {
+      const [pattern] = validatePatterns({ patterns: [{ label: parsed.data.label, evidence }] }, sources, target);
+      const key = pattern.label.toLocaleLowerCase("de");
+      const previous = grouped.get(key);
+      grouped.set(key, previous ? validatePatterns({ patterns: [{ label: previous.label, evidence: [...previous.evidence, ...pattern.evidence] }] }, sources, target)[0] : pattern);
+    } catch {
+      // Reject the entire questionable pattern, never invent a replacement source or quote.
+      rejectedPatternCount++;
+    }
+  }
+  if (rejectedPatternCount && !grouped.size) throw new Error("Keine KI-Zuordnung konnte bestätigt werden. Die bisherige Auswertung bleibt erhalten; es wird keine Fehlerfreiheit behauptet.");
+  return { patterns: [...grouped.values()].sort((a, b) => b.previous - a.previous || b.evidence.length - a.evidence.length), rejectedPatternCount };
+}
 
 export function berlinDate(now = new Date()) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
