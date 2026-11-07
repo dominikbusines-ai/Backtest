@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { loadMistakeSources } from "@/lib/mistake-data";
+import { explainAnthropicError } from "@/lib/anthropic-error";
 import { comparisonSources, makeReport, validatePatterns } from "@/lib/mistake-patterns";
 
 export const runtime = "nodejs";
@@ -52,8 +53,11 @@ export async function POST(request: Request) {
         } }],
         tool_choice: { type: "tool", name: "report_patterns" },
       });
-    } catch {
-      return NextResponse.json({ error: "Die KI-Prüfung ist gerade nicht verfügbar (Verbindung, Zeitlimit oder API-Guthaben). Gespeicherte Daten bleiben unverändert. Bitte später erneut prüfen." }, { status: 503 });
+    } catch (error) {
+      const failure = explainAnthropicError(error);
+      // Log only safe diagnostic metadata, never the Error object or source texts.
+      console.error("mistake-patterns provider failure", { code: failure.code, status: failure.providerStatus, requestId: failure.requestId });
+      return NextResponse.json(failure, { status: 503, headers: { "Cache-Control": "no-store" } });
     }
     if (response.stop_reason !== "tool_use") throw new Error("Die KI-Auswertung ist unvollständig. Es wird keine teilweise Fehlerliste angezeigt. Bitte erneut versuchen.");
     const block = response.content.find((item) => item.type === "tool_use" && item.name === "report_patterns");

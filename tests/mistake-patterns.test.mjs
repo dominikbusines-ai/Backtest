@@ -14,6 +14,7 @@ function load(file, dependencies = {}) {
   return loadedModule.exports;
 }
 const helpers = load("lib/mistake-patterns.ts", { zod: { z } });
+const providerErrors = load("lib/anthropic-error.ts");
 const oldId = "10000000-0000-4000-8000-000000000001";
 const targetId = "10000000-0000-4000-8000-000000000002";
 function source(id, kind, created_at, fields = { review_mistake: "Ich bin zu früh eingestiegen." }) {
@@ -71,6 +72,7 @@ async function routeCheck({ sources = [earlier, target], input = { trade_id: tar
   const route = load("app/api/mistake-patterns/route.ts", {
     "next/server": { NextResponse: { json: (body, init) => Response.json(body, init) } },
     zod: { z }, "@/lib/mistake-data": { loadMistakeSources: async () => sources }, "@/lib/mistake-patterns": helpers,
+    "@/lib/anthropic-error": providerErrors,
     "@anthropic-ai/sdk": class { messages = { create: async (args) => { calls.push(args); if (fail) throw new Error("private provider detail"); return { stop_reason: stop, content: [{ type: "tool_use", name: "report_patterns", input: output }] }; } }; },
   });
   const prior = process.env.ANTHROPIC_API_KEY;
