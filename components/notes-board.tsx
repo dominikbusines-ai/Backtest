@@ -56,6 +56,16 @@ export function NotesBoard() {
     return () => controller.abort();
   }, []);
 
+  // Reveal the exact note linked from a verified AI quotation after loading it.
+  useEffect(() => {
+    if (!/^#note-[a-f0-9-]{36}$/.test(window.location.hash)) return;
+    const note = document.getElementById(window.location.hash.slice(1));
+    if (note instanceof HTMLDetailsElement) {
+      note.open = true;
+      note.scrollIntoView({ block: "start" });
+    }
+  }, [notes]);
+
   // Store on input, so navigation immediately after typing cannot lose text.
   function keepDraft(next: Draft) {
     setDraft(next);
@@ -157,7 +167,7 @@ export function NotesBoard() {
         {loading && <p role="status" className="flex items-center gap-2 py-6 text-sm text-zinc-500"><Loader2 className="h-4 w-4 animate-spin" /> Notizen werden geladen…</p>}
         {loadError && <div role="alert" className="panel p-4 text-sm leading-6 text-amber-400"><p>{loadError}</p><button type="button" onClick={() => window.location.reload()} className="mt-2 min-h-11 text-xs underline">Erneut laden</button></div>}
         {!loading && !loadError && notes.length === 0 && <div className="panel px-5 py-10 text-center"><NotebookPen className="mx-auto mb-3 h-6 w-6 text-zinc-600" /><p className="text-sm text-zinc-400">Noch keine Notizen.</p><p className="mt-1 text-xs text-zinc-500">Halten Sie oben Ihren ersten Gedanken fest.</p></div>}
-        {notes.map((note) => <details key={note.id} className={`panel group ${draft?.id === note.id ? "border-lime/40" : ""}`}>
+        {notes.map((note) => <details key={note.id} id={`note-${note.id}`} className={`panel group scroll-mt-24 ${draft?.id === note.id ? "border-lime/40" : ""}`}>
           <summary className="flex min-h-11 cursor-pointer list-none items-center gap-3 rounded-2xl p-3 focus-visible:outline-2 focus-visible:outline-lime sm:px-4 [&::-webkit-details-marker]:hidden">
             <div className="min-w-0 flex-1">
               <h3 className="truncate text-sm font-semibold">{note.title || "Ohne Titel"}</h3>

@@ -9,7 +9,7 @@ import { TradeImageViewer } from "@/components/trade-image-viewer";
 import { instrumentForMode, instrumentOptions, selectedInstrument, SEPTEMBER_ROLLOVER } from "@/lib/instruments";
 import type { AnalysisResult, Direction, ResultType, Trade, TradeInput, TradeMode } from "@/lib/types";
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 
 type FormState = {
   trade_date: string; trade_time: string; trade_mode: TradeMode; instrument: string; timeframe: string; direction: Direction | null;
@@ -130,7 +130,7 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
       const stored = window.localStorage.getItem(draftKey);
       if (stored) draft = JSON.parse(stored) as Partial<StoredDraft>;
     } catch {
-      window.localStorage.removeItem(draftKey);
+      try { window.localStorage.removeItem(draftKey); } catch { /* Browser storage may be unavailable. */ }
     }
     const restoreFrame = window.requestAnimationFrame(() => {
       if (draft?.version === 1 && draft.form) {
@@ -260,7 +260,16 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
     try {
       const response = await fetch(initialTrade ? `/api/trades/${initialTrade.id}` : "/api/trades", { method: initialTrade ? "PATCH" : "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const data = await response.json(); if (!response.ok) throw new Error(data.error);
-      window.localStorage.removeItem(draftKey);
+      try { window.localStorage.removeItem(draftKey); } catch { /* A successful save must not fail because browser storage is unavailable. */ }
+      if (body.trade_mode === "live") {
+        const savedId = initialTrade?.id ?? data.id;
+        // Saving has finished. The separate check must never turn an AI outage into a save error.
+        setDraftHydrated(false);
+        if (!initialTrade) { setForm(emptyForm()); clearPendingScreenshot(); }
+        router.push(`/trades/${savedId}?mistake_check=${crypto.randomUUID()}`);
+        router.refresh();
+        return;
+      }
       if (initialTrade) { router.push(`/trades/${initialTrade.id}`); router.refresh(); return; }
       setDraftHydrated(false);
       setForm(emptyForm()); setSelected([]); setDetected(new Set()); clearPendingScreenshot();
@@ -332,7 +341,7 @@ export function BacktestForm({ initialTrade }: { initialTrade?: Trade }) {
         <section className="panel p-4 sm:p-5"><label className={noTrade ? "opacity-40" : ""}><span className="label">Tatsächliches Ergebnis in R{marker("result_r")}</span><input className="field text-lg font-bold disabled:cursor-not-allowed" disabled={noTrade} type="number" step="any" placeholder="z. B. 1.82 oder -1" value={form.result_r} onChange={(e) => update("result_r", e.target.value)} /></label></section>
         {message && <div role="status" className={`rounded-xl border p-3 text-xs ${message.type === "ok" ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-400" : "border-rose-500/20 bg-rose-500/5 text-rose-400"}`}>{message.text}</div>}
         <button type="button" onClick={() => void save()} disabled={saving || analyzing} className="flex h-14 w-full items-center justify-center gap-2 rounded-xl bg-lime text-sm font-extrabold text-ink transition hover:bg-[#c5ff5b] disabled:cursor-not-allowed disabled:opacity-50">{saving && <Loader2 className="h-4 w-4 animate-spin" />}{initialTrade ? "Änderungen speichern" : noTrade ? "Kein Trade speichern" : form.trade_mode === "live" ? "Live Trade speichern" : "Backtest speichern"}</button>
-        {!initialTrade && <p className="text-center text-[11px] text-zinc-700">Nach dem Speichern ist das Formular direkt bereit.</p>}
+        <p className="text-center text-[11px] leading-5 text-zinc-500">{form.trade_mode === "live" ? "Nach dem Speichern öffnet sich der Trade mit automatischer KI-Fehlerprüfung (Anthropic API-Guthaben)." : !initialTrade ? "Nach dem Speichern ist das Formular direkt bereit." : ""}</p>
       </aside>
     </div>
   );

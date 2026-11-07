@@ -5,6 +5,7 @@ import { ArrowLeft, Pencil } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { DeleteTradeButton } from "@/components/delete-trade-button";
 import { TradeImageViewer } from "@/components/trade-image-viewer";
+import { MistakePatterns } from "@/components/mistake-patterns";
 import { getTrade } from "@/lib/trade-data";
 
 export const dynamic = "force-dynamic";
@@ -19,12 +20,15 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   } catch { return { title: "Trade | EdgeLog", openGraph: { images: [] }, twitter: { images: [] } }; }
 }
 
-export default async function TradeDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function TradeDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ mistake_check?: string | string[] }> }) {
   let trade; try { trade = await getTrade((await params).id); } catch { return <AppShell><div className="panel p-8 text-sm text-zinc-500">Supabase ist noch nicht eingerichtet.</div></AppShell>; }
   if (!trade) notFound();
+  const query = await searchParams;
+  const autoToken = typeof query.mistake_check === "string" && /^[a-f0-9-]{36}$/.test(query.mistake_check) ? query.mistake_check : undefined;
   const details = [["Typ", trade.trade_mode === "live" ? "Live Trade" : "Backtest"], ["Datum", new Intl.DateTimeFormat("de-DE").format(new Date(`${trade.trade_date}T12:00:00`))], ["Uhrzeit", trade.trade_time?.slice(0,5) ?? "—"], ["Instrument", trade.instrument], ["Timeframe", trade.timeframe ?? "—"], ["Richtung", trade.direction?.toUpperCase() ?? "—"], ["Entry", trade.entry ?? "—"], ["Stop Loss", trade.stop_loss ?? "—"], ["Take Profit", trade.take_profit ?? "—"], ["Geplantes R:R", trade.planned_rr?.toFixed(2) ?? "—"], ["Ergebnis", trade.result_type === "no_trade" ? "Kein Trade" : trade.result_r === null ? "—" : `${trade.result_r}R`], ["Confidence", trade.confidence ? `${trade.confidence}/5` : "—"], ["MFE / MAE", `${trade.mfe ?? "—"} / ${trade.mae ?? "—"}`]];
   return <AppShell>
     <div className="mb-6 flex flex-col items-stretch gap-4 sm:mb-7 sm:flex-row sm:items-end sm:justify-between"><div><Link href="/trades" className="mb-4 flex min-h-11 items-center gap-2 text-xs text-zinc-500 hover:text-white"><ArrowLeft className="h-3.5 w-3.5" /> Alle Einträge</Link><p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-lime">{trade.trade_mode === "live" ? "Live-Trade-Detail" : "Backtest-Detail"}</p><h1 className="mt-2 text-2xl font-bold sm:text-3xl">{trade.instrument} · {trade.result_type === "no_trade" ? "KEIN TRADE" : trade.direction?.toUpperCase() ?? "—"}</h1></div><div className="grid grid-cols-2 gap-2 sm:flex"><Link href={`/trades/${trade.id}/bearbeiten`} className="flex min-h-11 items-center justify-center gap-2 rounded-lg border border-line px-3 py-2 text-xs font-semibold text-zinc-300 hover:border-zinc-600"><Pencil className="h-3.5 w-3.5" /> Bearbeiten</Link><DeleteTradeButton id={trade.id} /></div></div>
+    {trade.trade_mode === "live" && <div className="mb-6"><MistakePatterns key={`${trade.id}:${autoToken || "manual"}`} tradeId={trade.id} autoToken={autoToken} /></div>}
     {trade.pre_trade_assessment && <section className="panel mb-6 p-4 sm:p-5"><h2 className="text-sm font-semibold">Pre-Trade-Bewertung</h2><p className="mt-2 text-xs text-zinc-500">Was brauche ich, damit ich vom Trend überzeugt bin?</p><p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-zinc-300">{trade.pre_trade_assessment}</p></section>}
     <div className="grid gap-6 lg:grid-cols-[1.2fr_1fr]">
       <section className="panel overflow-hidden">{trade.screenshot_signed_url ? <TradeImageViewer src={trade.screenshot_signed_url} alt={`Chart zu ${trade.instrument}`} /> : <div className="flex min-h-52 items-center justify-center text-sm text-zinc-700 sm:min-h-72">Kein Screenshot</div>}</section>
