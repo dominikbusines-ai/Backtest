@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { Suspense } from "react";
 import { usePathname } from "next/navigation";
+import { EvidenceReturnLink } from "@/components/evidence-return-link";
 import { BarChart3, ClipboardPlus, House, ListChecks, Table2 } from "lucide-react";
 
 const nav = [
@@ -35,6 +37,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </nav>
         </div>
       </header>
+      <Suspense fallback={null}><EvidenceReturnLink /></Suspense>
       <main className="app-main mx-auto max-w-[1440px] px-4 py-6 sm:px-5 sm:py-8 lg:px-8">{children}</main>
       <nav className="mobile-nav fixed inset-x-0 bottom-0 z-50 border-t border-line bg-ink/95 px-2 pt-1.5 backdrop-blur-xl sm:hidden" aria-label="Mobile Hauptnavigation">
         <div className="mx-auto grid max-w-md grid-cols-5 gap-1">

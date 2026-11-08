@@ -7,24 +7,26 @@ import { mistakeReportSchema, type MistakeReport, type MistakePattern } from "@/
 import { completedLiveCheck, readBrowserReport, rememberBrowserReport, requestMistakeReport } from "@/lib/mistake-report-client";
 import { findResolution, visibleMistakePatterns } from "@/lib/mistake-resolutions";
 import { useMistakeResolutions } from "@/components/use-mistake-resolutions";
+import { mistakeAnchor, mistakeEvidenceHref, revealMistakeAnchor } from "@/lib/mistake-navigation";
 
 const names = { live: "Live", backtest: "Backtest", note: "Notiz" };
 const fields: Record<string, string> = { content: "Notiztext", context: "Marktkontext", entry_note: "Entry-Begründung", pre_trade_assessment: "Pre-Trade", review_observation: "Aufgefallen", review_mistake: "Missachtet", review_invalidation: "Entry entkräftet", review_illogical: "Unlogisch" };
 
 function PatternItem({ pattern, tradeId, solved, disabled, onToggle }: { pattern: MistakePattern; tradeId?: string; solved: boolean; disabled: boolean; onToggle: () => void }) {
-  return <li className="rounded-xl border border-line px-3 py-3">
+  return <li id={mistakeAnchor(pattern.label)} className="scroll-mt-32 rounded-xl border border-line px-3 py-3">
     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
       <p className="min-w-0 break-words text-sm font-semibold text-zinc-200">{pattern.label}</p>
       <button type="button" onClick={onToggle} disabled={disabled} aria-label={`${pattern.label}: ${solved ? "Wieder öffnen" : "Als gelöst markieren"}`} className="min-h-11 shrink-0 rounded-lg border border-line px-3 text-xs font-semibold text-lime disabled:opacity-50">{solved ? "Wieder öffnen" : "Als gelöst markieren"}</button>
     </div>
     <p className="mt-1 text-xs text-zinc-500">{tradeId && (pattern.previous ? `${pattern.previous} frühere belegte ${pattern.previous === 1 ? "Erwähnung" : "Erwähnungen"} · ` : "Keine frühere Erwähnung · ")}{pattern.live} Live · {pattern.backtest} Backtest · {pattern.notes} Notizen</p>
-    <details className="mt-2"><summary className="cursor-pointer py-1 text-xs text-lime">Textbelege anzeigen</summary><ul className="mt-2 space-y-3">{pattern.evidence.map((item, i) => <li key={`${item.source_id}:${i}`} className="border-l-2 border-line pl-3 text-xs leading-5"><Link href={item.href} className="text-lime underline underline-offset-4">{names[item.kind]} · {item.title}{item.date ? ` · ${item.date}` : ""}</Link><span className="block text-zinc-500">{fields[item.field] || item.field}{item.source_id === `trade:${tradeId}` ? " · Dieser Trade" : ""}</span><p className="break-words text-zinc-300">„{item.quote}“</p></li>)}</ul></details>
+    <details className="mt-2"><summary className="cursor-pointer py-1 text-xs text-lime">Textbelege anzeigen</summary><ul className="mt-2 space-y-3">{pattern.evidence.map((item, i) => <li key={`${item.source_id}:${i}`} className="border-l-2 border-line pl-3 text-xs leading-5"><Link href={mistakeEvidenceHref(item.href, pattern.label, tradeId)} className="text-lime underline underline-offset-4">{names[item.kind]} · {item.title}{item.date ? ` · ${item.date}` : ""}</Link><span className="block text-zinc-500">{fields[item.field] || item.field}{item.source_id === `trade:${tradeId}` ? " · Dieser Trade" : ""}</span><p className="break-words text-zinc-300">„{item.quote}“</p></li>)}</ul></details>
   </li>;
 }
 
 export function MistakePatterns({ tradeId, autoToken }: { tradeId?: string; autoToken?: string }) {
   const resolution = useMistakeResolutions();
   const solvedSection = useRef<HTMLDetailsElement>(null);
+  const restoredAnchor = useRef("");
   const [report, setReport] = useState<MistakeReport | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -78,6 +80,17 @@ export function MistakePatterns({ tradeId, autoToken }: { tradeId?: string; auto
     }, 0);
     return () => { active = false; controller.abort(); window.clearTimeout(timer); requestId.current += 1; };
   }, [tradeId, autoToken, run]);
+
+  useEffect(() => {
+    if (loadingSaved || !resolution.ready) return;
+    const restore = () => {
+      const hash = window.location.hash;
+      if (hash !== restoredAnchor.current && revealMistakeAnchor(hash)) restoredAnchor.current = hash;
+    };
+    restore();
+    window.addEventListener("hashchange", restore);
+    return () => window.removeEventListener("hashchange", restore);
+  }, [loadingSaved, resolution.ready, report, resolution.entries]);
 
   const openPatterns = visibleMistakePatterns(report?.patterns ?? [], resolution.entries, !tradeId);
   const solvedEntries = resolution.entries.filter((entry) => entry.resolved && (!tradeId || report?.patterns.some((pattern) => findResolution(pattern, [entry]))));

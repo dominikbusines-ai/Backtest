@@ -95,6 +95,7 @@ test("UI separates open problems and a closed solved section with reopening cont
     "react/jsx-runtime": jsx, react: { useState: (initial) => [initial === null ? report : initial, () => {}], useEffect: () => {}, useCallback: (fn) => fn, useRef: (current) => ({ current }) },
     "next/link": { __esModule: true, default: ({ href, children }) => jsx.jsx("a", { href, children }) }, "lucide-react": { Loader2: "span" },
     "@/lib/mistake-patterns": patterns, "@/lib/mistake-report-client": {}, "@/lib/mistake-resolutions": resolutions,
+    "@/lib/mistake-navigation": load("lib/mistake-navigation.ts"),
     "@/components/use-mistake-resolutions": { useMistakeResolutions: () => ({ entries: [entry], ready: true, saving: false, error: "", changeStatus: () => {} }) },
   });
   const html = renderToStaticMarkup(component.MistakePatterns({}));
