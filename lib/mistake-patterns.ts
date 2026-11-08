@@ -22,7 +22,7 @@ export const patternInputSchema = z.object({ patterns: z.array(z.object({
 export type MistakeEvidence = z.infer<typeof evidenceSchema> & {
   kind: MistakeSource["kind"]; title: string; date: string; href: string;
 };
-export type MistakePattern = { label: string; evidence: MistakeEvidence[]; live: number; backtest: number; notes: number; previous: number };
+export type MistakePattern = { label: string; evidence: MistakeEvidence[]; live: number; backtest: number; notes: number; previous: number; resolutionKey?: string };
 export type MistakeReport = {
   patterns: MistakePattern[];
   status: "repeated" | "documented" | "no_evidence" | "insufficient" | "no_trade";
@@ -36,7 +36,7 @@ export type MistakeReport = {
 
 export const mistakeReportSchema = z.object({
   patterns: z.array(z.object({
-    label: z.string(), evidence: z.array(evidenceSchema.extend({
+    label: z.string(), resolutionKey: z.string().min(1).max(100).optional(), evidence: z.array(evidenceSchema.extend({
       kind: z.enum(["live", "backtest", "note"]), title: z.string(), date: z.string(),
       href: z.string().regex(/^(\/trades\/[a-f0-9-]+|\/#note-[a-f0-9-]+)$/),
     })), live: z.number().int().nonnegative(), backtest: z.number().int().nonnegative(),
@@ -61,9 +61,9 @@ export function mistakeEvidenceCatalog(sources: MistakeSource[]) {
   return { records, references };
 }
 
-export function resolveMistakeReferences(raw: unknown, sources: MistakeSource[], target?: MistakeSource) {
+export function resolveMistakeReferences(raw: unknown, sources: MistakeSource[], target?: MistakeSource, resolvedProblems: { key: string }[] = []) {
   const input = z.object({ patterns: z.array(z.unknown()).max(200) }).parse(raw);
-  const itemSchema = z.object({ label: z.string().trim().min(3).max(100), evidence_refs: z.array(z.string()).min(1).max(1000) });
+  const itemSchema = z.object({ label: z.string().trim().min(3).max(100), evidence_refs: z.array(z.string()).min(1).max(1000), resolved_key: z.string().max(100).optional() });
   const { references } = mistakeEvidenceCatalog(sources);
   const grouped = new Map<string, MistakePattern>();
   let rejectedPatternCount = 0;
@@ -78,9 +78,13 @@ export function resolveMistakeReferences(raw: unknown, sources: MistakeSource[],
     }
     try {
       const [pattern] = validatePatterns({ patterns: [{ label: parsed.data.label, evidence }] }, sources, target);
+      // Only known user-marked problems may be hidden. Unknown model IDs stay visible.
+      if (parsed.data.resolved_key && resolvedProblems.some((entry) => entry.key === parsed.data.resolved_key)) pattern.resolutionKey = parsed.data.resolved_key;
       const key = pattern.label.toLocaleLowerCase("de");
       const previous = grouped.get(key);
-      grouped.set(key, previous ? validatePatterns({ patterns: [{ label: previous.label, evidence: [...previous.evidence, ...pattern.evidence] }] }, sources, target)[0] : pattern);
+      const merged = previous ? validatePatterns({ patterns: [{ label: previous.label, evidence: [...previous.evidence, ...pattern.evidence] }] }, sources, target)[0] : pattern;
+      if (previous?.resolutionKey || pattern.resolutionKey) merged.resolutionKey = previous?.resolutionKey || pattern.resolutionKey;
+      grouped.set(key, merged);
     } catch {
       // Reject the entire questionable pattern, never invent a replacement source or quote.
       rejectedPatternCount++;

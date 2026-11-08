@@ -68,13 +68,13 @@ test("Duplicate labels fail closed; short explicit notes remain supported", () =
   assert.equal(helpers.validatePatterns(raw(evidence(short)), [short], short).length, 1);
 });
 
-async function routeCheck({ sources = [earlier, target], input = { trade_id: targetId }, output = refRaw("E1", "E2"), stop = "tool_use", fail = false, cached = null, method = "POST", saveFails = false } = {}) {
+async function routeCheck({ sources = [earlier, target], input = { trade_id: targetId }, output = refRaw("E1", "E2"), stop = "tool_use", fail = false, cached = null, method = "POST", saveFails = false, resolutions = [] } = {}) {
   const calls = [], saves = [];
   const route = load("app/api/mistake-patterns/route.ts", {
     "next/server": { NextResponse: { json: (body, init) => Response.json(body, init) } },
     zod: { z }, "@/lib/mistake-data": { loadMistakeSources: async () => sources }, "@/lib/mistake-patterns": helpers,
     "@/lib/anthropic-error": providerErrors,
-    "@/lib/mistake-report-store": { mistakeFingerprint: () => "a".repeat(64), readMistakeReport: async () => cached, ensureMistakeReportStore: async () => {}, saveMistakeReport: async (...args) => { if (saveFails) throw Error("storage failed"); saves.push(args); } },
+    "@/lib/mistake-report-store": { mistakeFingerprint: () => "a".repeat(64), readMistakeReport: async () => cached, readMistakeResolutions: async () => resolutions, ensureMistakeReportStore: async () => {}, saveMistakeReport: async (...args) => { if (saveFails) throw Error("storage failed"); saves.push(args); } },
     "@/lib/mistake-stream": { MISTAKE_TIMEOUT_MS: 120000, streamMistakeMessage: (client, args) => client.messages.create(args) },
     "@anthropic-ai/sdk": class { messages = { create: async (args) => { calls.push(args); if (fail) throw new Error("private provider detail"); return { stop_reason: stop, content: [{ type: "tool_use", name: "report_patterns", input: output }] }; } }; },
   });
@@ -187,6 +187,21 @@ test("Entirely unconfirmed output never becomes a saved clean report; genuine em
   assert.throws(() => helpers.resolveMistakeReferences(refRaw("E1"), [earlier, target], target), /Keine KI-Zuordnung/);
   const result = helpers.resolveMistakeReferences({ patterns: [] }, [target], target);
   assert.deepEqual(result, { patterns: [], rejectedPatternCount: 0 });
+});
+
+test("New AI checks receive solved problems and preserve their identity even with a new label", async () => {
+  const resolutions = [
+    { key: "zu früher entry", resolved: true, pattern: { label: "Zu früher Entry" } },
+    { key: "stopp versetzt", resolved: false, pattern: { label: "Stopp versetzt" } },
+  ];
+  const output = { patterns: [{ label: "Ungeduld beim Einstieg", evidence_refs: ["E1", "E2"], resolved_key: "zu früher entry" }] };
+  const result = await routeCheck({ output, resolutions });
+  assert.equal(result.status, 200);
+  assert.match(result.calls[0].system, /zu früher entry/);
+  assert.ok(!result.calls[0].system.includes("stopp versetzt"));
+  assert.equal(result.body.patterns[0].resolutionKey, "zu früher entry");
+  const unknown = helpers.resolveMistakeReferences({ patterns: [{ ...output.patterns[0], resolved_key: "invented" }] }, [earlier, target], target, resolutions);
+  assert.equal(unknown.patterns[0].resolutionKey, undefined);
 });
 test("Reader paginates, excludes screenshots, never writes, detects row limit", async () => {
   const calls = [];

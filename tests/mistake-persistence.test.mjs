@@ -15,6 +15,7 @@ function load(file, dependencies = {}) {
   return loadedModule.exports;
 }
 const helpers = load("lib/mistake-patterns.ts", { zod: { z } });
+const resolutionHelpers = load("lib/mistake-resolutions.ts", { zod: { z }, "@/lib/mistake-patterns": helpers });
 const report = helpers.makeReport([], [], undefined, 0, new Date("2026-11-07T10:00:00Z"));
 const fp = "a".repeat(64), nextFp = "b".repeat(64);
 const tradeId = "10000000-0000-4000-8000-000000000001";
@@ -26,16 +27,16 @@ function storeMock() {
     createBucket: async (name, options) => { state.creates.push({ name, options }); state.exists = true; return {}; },
     from: () => ({
       download: async (path) => state.files.has(path) ? { data: new Blob([state.files.get(path)]) } : { error: { statusCode: 404 } },
-      list: async (folder) => ({ data: [...state.files.keys()].filter((path) => path.startsWith(`${folder}/`)).reverse().slice(0, 1).map((path) => ({ name: path.slice(folder.length + 1) })) }),
+      list: async (folder, options) => ({ data: [...state.files.keys()].filter((path) => path.startsWith(`${folder}/`)).reverse().slice(options.offset ?? 0, (options.offset ?? 0) + options.limit).map((path) => ({ name: path.slice(folder.length + 1) })) }),
       upload: async (path, body, options) => {
         state.uploads.push({ path, options });
         if (state.failUpload) return { error: { statusCode: 503, message: "Unavailable" } };
-        if (state.files.has(path)) return { error: { statusCode: 409, message: "The resource already exists" } };
+        if (state.files.has(path) && !options.upsert) return { error: { statusCode: 409, message: "The resource already exists" } };
         state.files.set(path, body); return {};
       },
     }),
   };
-  const api = load("lib/mistake-report-store.ts", { "node:crypto": crypto, zod: { z }, "@/lib/supabase-server": { requireSupabase: () => ({ storage }) }, "@/lib/mistake-patterns": helpers });
+  const api = load("lib/mistake-report-store.ts", { "node:crypto": crypto, zod: { z }, "@/lib/supabase-server": { requireSupabase: () => ({ storage }) }, "@/lib/mistake-patterns": helpers, "@/lib/mistake-resolutions": resolutionHelpers });
   return { state, api };
 }
 
@@ -75,6 +76,30 @@ test("Fingerprint changes with source text and scope; corrupt snapshots fail clo
   await api.ensureMistakeReportStore();
   state.files.set(`all/${fp}.json`, JSON.stringify({ fingerprint: nextFp, report }));
   await assert.rejects(api.readMistakeReport(undefined, fp), /Datenstand/);
+});
+
+test("Resolution status survives report replacements, reopening and updates to other problems", async () => {
+  const { state, api } = storeMock();
+  const pattern = { label: "Zu früher Entry", evidence: [], live: 1, backtest: 0, notes: 0, previous: 0 };
+  assert.deepEqual(await api.readMistakeResolutions(), []); assert.equal(state.creates.length, 0);
+  await api.saveMistakeResolution(pattern, true);
+  await api.saveMistakeResolution({ ...pattern, label: "Stopp verschoben" }, true);
+  await api.saveMistakeReport(report, fp);
+  assert.equal((await api.readMistakeResolutions()).length, 2);
+  await api.saveMistakeResolution(pattern, false);
+  const entries = await api.readMistakeResolutions();
+  assert.equal(entries.find((entry) => entry.key === "zu früher entry").resolved, false);
+  assert.equal(entries.find((entry) => entry.key === "stopp verschoben").resolved, true);
+  assert.equal((await api.readMistakeReport()).fingerprint, fp);
+  state.failUpload = true;
+  await assert.rejects(api.saveMistakeResolution(pattern, true), /nicht gespeichert/);
+  assert.equal((await api.readMistakeResolutions()).find((entry) => entry.key === "zu früher entry").resolved, false);
+});
+
+test("Resolution reader paginates beyond the first hundred records", async () => {
+  const { api } = storeMock();
+  for (let i = 0; i < 101; i++) await api.saveMistakeResolution({ label: `Problem ${i}`, evidence: [], live: 0, backtest: 0, notes: 1, previous: 0 }, true);
+  assert.equal((await api.readMistakeResolutions()).length, 101);
 });
 
 test("Client persists completed results independently of navigation and deduplicates the same Live save", async () => {

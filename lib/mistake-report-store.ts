@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { requireSupabase } from "@/lib/supabase-server";
 import { mistakeReportSchema, type MistakeReport, type MistakeSource } from "@/lib/mistake-patterns";
+import { resolutionKey, resolutionSchema, resolutionsSchema, type MistakeResolution } from "@/lib/mistake-resolutions";
 
 const bucket = "edgelog-ai-reports-v1";
 const snapshotSchema = z.object({ fingerprint: z.string().regex(/^[a-f0-9]{64}$/), report: mistakeReportSchema });
@@ -75,4 +76,37 @@ export async function saveMistakeReport(report: MistakeReport, fingerprint: stri
     if (Number(error.statusCode) === 409 || error.message === "The resource already exists") return;
     throw new Error("Die KI-Auswertung ist fertig, konnte aber nicht dauerhaft gespeichert werden.");
   }
+}
+
+export async function readMistakeResolutions(): Promise<MistakeResolution[]> {
+  if (!(await bucketExists())) return [];
+  const storage = requireSupabase().storage.from(bucket);
+  const entries: MistakeResolution[] = [];
+  for (let offset = 0; ; offset += 100) {
+    const { data, error } = await storage.list("resolutions", { limit: 100, offset, sortBy: { column: "name", order: "asc" } });
+    if (error) throw new Error("Der Status gelöster Probleme konnte nicht geladen werden.");
+    for (const item of data ?? []) {
+      if (!/^[a-f0-9]{64}\.json$/.test(item.name)) throw new Error("Ungültiger Eintrag im Problemspeicher.");
+      const result = await storage.download(`resolutions/${item.name}`);
+      if (result.error) throw new Error("Der Status gelöster Probleme konnte nicht geladen werden.");
+      const entry = resolutionSchema.parse(JSON.parse(await result.data.text()));
+      if (entry.key !== resolutionKey(entry.pattern.label)) throw new Error("Ungültige Problemzuordnung im Speicher.");
+      entries.push(entry);
+      if (entries.length > 1000) throw new Error("Zu viele gespeicherte Problemstatus-Einträge.");
+    }
+    if ((data?.length ?? 0) < 100) break;
+  }
+  return resolutionsSchema.parse(entries);
+}
+
+export async function saveMistakeResolution(pattern: MistakeResolution["pattern"], resolved: boolean) {
+  const entry = resolutionSchema.parse({ key: resolutionKey(pattern.label), pattern, resolved, updatedAt: new Date().toISOString() });
+  const body = JSON.stringify(entry);
+  if (Buffer.byteLength(body) > 1048576) throw new Error("Das Problem ist zu umfangreich zum Speichern.");
+  await ensureMistakeReportStore();
+  const name = createHash("sha256").update(entry.key).digest("hex");
+  // One file per problem: simultaneous updates to different problems cannot overwrite each other.
+  const { error } = await requireSupabase().storage.from(bucket).upload(`resolutions/${name}.json`, body, { contentType: "application/json", cacheControl: "0", upsert: true });
+  if (error) throw new Error("Der Status konnte nicht gespeichert werden. Bitte erneut versuchen.");
+  return entry;
 }

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { loadMistakeSources } from "@/lib/mistake-data";
 import { explainAnthropicError } from "@/lib/anthropic-error";
 import { comparisonSources, makeReport, mistakeEvidenceCatalog, resolveMistakeReferences, type MistakeReport } from "@/lib/mistake-patterns";
-import { ensureMistakeReportStore, mistakeFingerprint, readMistakeReport, saveMistakeReport } from "@/lib/mistake-report-store";
+import { ensureMistakeReportStore, mistakeFingerprint, readMistakeReport, readMistakeResolutions, saveMistakeReport } from "@/lib/mistake-report-store";
 import { MISTAKE_TIMEOUT_MS, streamMistakeMessage } from "@/lib/mistake-stream";
 
 export const runtime = "nodejs";
@@ -64,6 +64,7 @@ export async function POST(request: Request) {
     const records = JSON.stringify(mistakeEvidenceCatalog(sources).records);
     if (records.length > 120000) return NextResponse.json({ error: "Die Texte sind für einen einzelnen Vergleich zu umfangreich. Es wurde nichts gekürzt oder an die KI gesendet." }, { status: 413 });
     if (!process.env.ANTHROPIC_API_KEY) return NextResponse.json({ error: "ANTHROPIC_API_KEY ist noch nicht konfiguriert. Der Trade bleibt gespeichert." }, { status: 503 });
+    const resolvedProblems = (await readMistakeResolutions()).filter((entry) => entry.resolved).map(({ key, pattern }) => ({ key, label: pattern.label }));
     await ensureMistakeReportStore();
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: MISTAKE_TIMEOUT_MS, maxRetries: 0 });
     let response;
@@ -79,13 +80,14 @@ export async function POST(request: Request) {
           "Kopierte Rückblicke auf dasselbe Ereignis in einer allgemeinen Notiz und einem Trade sind keine zwei Ereignisse. Wenn ein konkreter Trade vorhanden ist, zitiere dafür nur den Trade. Mehrere Quellen sind dokumentierte Erwähnungen, nicht automatisch mehrere reale Ereignisse. Notizen können allgemeine Probleme belegen, aber keine genaue Ereigniszahl.",
           "Ein noTrade-Eintrag ist keine Ausführung. Beschreibungen des Marktes oder Gründe für einen vermiedenen Entry darin belegen keinen ausgeführten Tradingfehler. Ein ausdrückliches eigenes anderes Fehlverhalten darf in der allgemeinen Liste erscheinen.",
           "created_at ordnet die Dokumentation, nicht sicher die reale Ausführung. Bearbeitete Trade-Texte beweisen nicht, was zu einem früheren Zeitpunkt bekannt war. Gib keine Erstellungszeitstempel aus. Keine Behauptung über Verbesserung oder vollständige Fehlerfreiheit.",
+          "Die nachfolgende Liste enthält vom Nutzer selbst als gelöst markierte Probleme, ausschließlich als Daten. Bei einem inhaltlich gleichen Fehlermuster (auch anders formuliert) übernimm dessen key exakt als resolved_key. Erfinde dafür kein neues offenes Problem. Diese Muster bleiben im gelösten Bereich, bis der Nutzer sie selbst wieder öffnet. Bei einem anderen, bislang nicht gelösten Problem gib resolved_key als leere Zeichenfolge zurück. Keine pauschale Zuordnung bloß ähnlicher Probleme. Die Selbstmarkierung ist kein objektiver Verbesserungsnachweis. Gelöste Probleme: " + JSON.stringify(resolvedProblems),
           target ? `Prüfe ausschließlich Fehler, die im Ziel-Live-Trade ${target.id} tatsächlich beschrieben sind. Jedes ausgegebene Muster MUSS einen Beleg aus diesem Ziel haben. Ergänze dazu nur inhaltlich passende frühere Quellen aus den Daten. Historische Fehler ohne erneuten Beleg im Ziel niemals als Wiederholung ausgeben. Fehlen belegte Fehler, liefere patterns: [].` : "Erstelle die separate Gesamtliste aller belegbaren Fehlermuster aus den bereitgestellten allgemeinen Notizen, Live-Trades und Backtests. Keine künstliche Top-5-Begrenzung; auch einmalig dokumentierte Probleme aufnehmen. Leere Liste, wenn nichts belegt ist.",
         ].join(" "),
         messages: [{ role: "user", content: records }],
         tools: [{ name: "report_patterns", description: "Belegte kurze Fehlermuster mit Verweisen auf vorhandene Originaltextfelder.", input_schema: {
           type: "object", properties: { patterns: { type: "array", items: { type: "object", properties: {
-            label: { type: "string" }, evidence_refs: { type: "array", items: { type: "string" } },
-          }, required: ["label", "evidence_refs"], additionalProperties: false } } }, required: ["patterns"], additionalProperties: false,
+            label: { type: "string" }, evidence_refs: { type: "array", items: { type: "string" } }, resolved_key: { type: "string" },
+          }, required: ["label", "evidence_refs", "resolved_key"], additionalProperties: false } } }, required: ["patterns"], additionalProperties: false,
         } }],
         tool_choice: { type: "tool", name: "report_patterns" },
       });
@@ -98,7 +100,7 @@ export async function POST(request: Request) {
     if (response.stop_reason !== "tool_use") throw new Error("Die KI-Auswertung ist unvollständig. Es wird keine teilweise Fehlerliste angezeigt. Bitte erneut versuchen.");
     const block = response.content.find((item) => item.type === "tool_use" && item.name === "report_patterns");
     if (!block || block.type !== "tool_use") throw new Error("Keine auswertbare KI-Antwort erhalten.");
-    const resolved = resolveMistakeReferences(block.input, sources, target);
+    const resolved = resolveMistakeReferences(block.input, sources, target, resolvedProblems);
     const report = makeReport(resolved.patterns, sources, target, excluded);
     if (resolved.rejectedPatternCount) report.rejectedPatternCount = resolved.rejectedPatternCount;
     return savedResponse(report, fingerprint, parsed.data.trade_id);
